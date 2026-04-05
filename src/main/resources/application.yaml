@@ -1,3 +1,25 @@
 spring:
   application:
     name: backend
+
+  datasource:
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/airs}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: ${DDL_AUTO:update}
+    open-in-view: false
+
+# jwt:
+#   secret-key: ${JWT_SECRET}
+#   access-token-expiration-minutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:30}
+#   refresh-token-expiration-days: ${JWT_REFRESH_TOKEN_EXPIRATION_DAYS:14}
+
+# influx:
+#   url: ${INFLUX_URL:http://127.0.0.1:8086}
+#   token: ${INFLUX_TOKEN}
+#   org: ${INFLUX_ORG}
+#   bucket: ${INFLUX_BUCKET}
