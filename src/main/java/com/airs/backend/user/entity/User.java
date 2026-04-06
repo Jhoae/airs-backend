@@ -1,5 +1,6 @@
 package com.airs.backend.user.entity;
 
+import com.airs.backend.user.UserPolicy;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -9,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.Size;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -26,10 +28,14 @@ public class User {
     @Column(name = "user_id")
     private Long userId;
 
-    @Column(nullable = false, length = 20)
+    @Size(
+            min = UserPolicy.NICKNAME_MIN_LENGTH,
+            max = UserPolicy.NICKNAME_MAX_LENGTH
+    )
+    @Column(nullable = false, length = UserPolicy.NICKNAME_MAX_LENGTH)
     private String nickname;
 
-    @Column(nullable = false, length = 50, unique = true)
+    @Column(nullable = false, length = UserPolicy.EMAIL_MAX_LENGTH, unique = true)
     private String email;
 
     @Column(name = "password_hash", nullable = false, length = 255)
