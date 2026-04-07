@@ -1,5 +1,7 @@
 package com.airs.backend.auth.service;
 
+import com.airs.backend.auth.dto.LoginRequest;
+import com.airs.backend.auth.dto.LoginResponse;
 import com.airs.backend.auth.dto.SignUpRequest;
 import com.airs.backend.auth.dto.SignUpResponse;
 import com.airs.backend.user.entity.User;
@@ -38,8 +40,27 @@ public class AuthService {
         userPreference.assignUser(savedUser);
         userPreferenceRepository.save(userPreference);
 
-
         return new SignUpResponse(savedUser.getUserId(), savedUser.getEmail(), savedUser.getNickname());
     }
 
+    @Transactional(readOnly = true)
+    public LoginResponse login(LoginRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않습니다."));
+
+        boolean isPasswordMatched = passwordEncoder.matches(
+                request.getPassword(),
+                user.getPasswordHash()
+        );
+
+        if (!isPasswordMatched) {
+            throw new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않습니다.");
+        }
+
+        return new LoginResponse(
+                user.getUserId(),
+                user.getEmail(),
+                user.getNickname()
+        );
+    }
 }
