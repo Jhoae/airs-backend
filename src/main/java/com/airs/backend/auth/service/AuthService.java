@@ -4,6 +4,7 @@ import com.airs.backend.auth.dto.LoginRequest;
 import com.airs.backend.auth.dto.LoginResponse;
 import com.airs.backend.auth.dto.SignUpRequest;
 import com.airs.backend.auth.dto.SignUpResponse;
+import com.airs.backend.global.jwt.JwtTokenProvider;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserPreference;
 import com.airs.backend.user.repository.UserPreferenceRepository;
@@ -21,6 +22,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final UserPreferenceRepository userPreferenceRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtTokenProvider jwtTokenProvider;
 
     public SignUpResponse signUp(SignUpRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -57,7 +59,10 @@ public class AuthService {
             throw new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않습니다.");
         }
 
+        String accessToken = jwtTokenProvider.generateAccessToken(user.getUserId());
+
         return new LoginResponse(
+                accessToken,
                 user.getUserId(),
                 user.getEmail(),
                 user.getNickname()

@@ -8,9 +8,11 @@ import lombok.Getter;
 @AllArgsConstructor
 public class LoginResponse {
 
+    private String accessToken;
     private Long userId;
 
     private String email;
 
     private String nickname;
+
 }

@@ -13,9 +13,9 @@ spring:
       ddl-auto: ${DDL_AUTO:update}
     open-in-view: false
 
-# jwt:
-#   secret-key: ${JWT_SECRET}
-#   access-token-expiration-minutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:30}
+jwt:
+  secret-key: ${JWT_SECRET:airs-prj-very-very-top-top-secret--key}
+  access-token-expiration-minutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:30}
 #   refresh-token-expiration-days: ${JWT_REFRESH_TOKEN_EXPIRATION_DAYS:14}
 
 # influx:
