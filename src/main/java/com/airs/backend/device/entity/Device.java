@@ -92,4 +92,22 @@ public class Device {
                 ", createdAt=" + createdAt +
                 '}';
     }
+
+    public void updateSettings(
+            BigDecimal preferredTemperature,
+            BigDecimal preferredHumidity,
+            String wifiSsid
+    ) {
+        if (preferredTemperature != null) {
+            this.preferredTemperature = preferredTemperature;
+        }
+
+        if (preferredHumidity != null) {
+            this.preferredHumidity = preferredHumidity;
+        }
+
+        if (wifiSsid != null) {
+            this.wifiSsid = wifiSsid;
+        }
+    }
 }
