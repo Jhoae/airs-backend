@@ -95,8 +95,7 @@ public class Device {
 
     public void updateSettings(
             BigDecimal preferredTemperature,
-            BigDecimal preferredHumidity,
-            String wifiSsid
+            BigDecimal preferredHumidity
     ) {
         if (preferredTemperature != null) {
             this.preferredTemperature = preferredTemperature;
@@ -104,10 +103,6 @@ public class Device {
 
         if (preferredHumidity != null) {
             this.preferredHumidity = preferredHumidity;
-        }
-
-        if (wifiSsid != null) {
-            this.wifiSsid = wifiSsid;
         }
     }
 }

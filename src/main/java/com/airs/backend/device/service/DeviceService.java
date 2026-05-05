@@ -108,8 +108,7 @@ public class DeviceService {
 
         device.updateSettings(
                 request.getPreferredTemperature(),
-                request.getPreferredHumidity(),
-                request.getWifiSsid()
+                request.getPreferredHumidity()
         );
 
         return new DeviceDetailResponse(

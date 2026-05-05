@@ -248,7 +248,6 @@ class DeviceControllerMySqlTest {
         String accessToken = jwtTokenProvider.generateAccessToken(userId);
         DeviceUpdateRequest request = new DeviceUpdateRequest(
                 new BigDecimal("24.0"),
-                null,
                 null
         );
 
@@ -278,7 +277,6 @@ class DeviceControllerMySqlTest {
         String accessToken = jwtTokenProvider.generateAccessToken(userId);
         DeviceUpdateRequest request = new DeviceUpdateRequest(
                 new BigDecimal("1234.5"),
-                null,
                 null
         );
 
@@ -301,7 +299,6 @@ class DeviceControllerMySqlTest {
         String accessToken = jwtTokenProvider.generateAccessToken(currentUserId);
         DeviceUpdateRequest request = new DeviceUpdateRequest(
                 new BigDecimal("24.0"),
-                null,
                 null
         );
 
