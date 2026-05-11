@@ -51,8 +51,7 @@ class DeviceServiceTransactionMySqlTest {
 
                     device.updateSettings(
                             new BigDecimal("24.0"),
-                            null,
-                            "NEW_WIFI"
+                            new BigDecimal("42.0")
                     );
 
                     throw new RuntimeException("기기 수정 중 강제 실패");

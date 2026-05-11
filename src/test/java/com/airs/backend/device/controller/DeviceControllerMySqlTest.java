@@ -11,7 +11,6 @@ import com.airs.backend.user.repository.UserPreferenceRepository;
 import com.airs.backend.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +31,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -158,24 +156,18 @@ class DeviceControllerMySqlTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated());
 
-        ServletException exception = assertThrows(
-                ServletException.class,
-                () -> mockMvc.perform(post("/airs/devices")
-                                .header("Authorization", "Bearer " + accessToken)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(objectMapper.writeValueAsString(request)))
-                        .andReturn()
-        );
-
-        assertNotNull(exception.getCause());
-        assertInstanceOf(IllegalArgumentException.class, exception.getCause());
-        assertEquals("이미 등록된 기기입니다.", exception.getCause().getMessage());
+        mockMvc.perform(post("/airs/devices")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("이미 등록된 기기입니다."));
     }
 
     @Test
     void getMyDevices_should_return_forbidden_when_access_token_is_missing() throws Exception {
         mockMvc.perform(get("/airs/devices"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -221,23 +213,17 @@ class DeviceControllerMySqlTest {
     }
 
     @Test
-    void getDevice_should_fail_when_device_belongs_to_other_user() {
+    void getDevice_should_fail_when_device_belongs_to_other_user() throws Exception {
         Long currentUserId = saveUser("device-detail-current@example.com");
         Long otherUserId = saveUser("device-detail-other@example.com");
         saveDevice(otherUserId, "NODE-DETAIL-OTHER", new BigDecimal("20.0"), new BigDecimal("50.0"), "OTHER_WIFI");
 
         String accessToken = jwtTokenProvider.generateAccessToken(currentUserId);
 
-        ServletException exception = assertThrows(
-                ServletException.class,
-                () -> mockMvc.perform(get("/airs/devices/NODE-DETAIL-OTHER")
-                                .header("Authorization", "Bearer " + accessToken))
-                        .andReturn()
-        );
-
-        assertNotNull(exception.getCause());
-        assertInstanceOf(IllegalArgumentException.class, exception.getCause());
-        assertEquals("해당 기기에 접근할 수 없습니다.", exception.getCause().getMessage());
+        mockMvc.perform(get("/airs/devices/NODE-DETAIL-OTHER")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("해당 기기에 접근할 수 없습니다."));
     }
 
     @Test
@@ -248,7 +234,6 @@ class DeviceControllerMySqlTest {
         String accessToken = jwtTokenProvider.generateAccessToken(userId);
         DeviceUpdateRequest request = new DeviceUpdateRequest(
                 new BigDecimal("24.0"),
-                null,
                 null
         );
 
@@ -278,7 +263,6 @@ class DeviceControllerMySqlTest {
         String accessToken = jwtTokenProvider.generateAccessToken(userId);
         DeviceUpdateRequest request = new DeviceUpdateRequest(
                 new BigDecimal("1234.5"),
-                null,
                 null
         );
 
@@ -293,7 +277,7 @@ class DeviceControllerMySqlTest {
     }
 
     @Test
-    void updateDevice_should_fail_when_device_belongs_to_other_user() {
+    void updateDevice_should_fail_when_device_belongs_to_other_user() throws Exception {
         Long currentUserId = saveUser("device-update-current@example.com");
         Long otherUserId = saveUser("device-update-other@example.com");
         saveDevice(otherUserId, "NODE-UPDATE-OTHER", new BigDecimal("20.0"), new BigDecimal("50.0"), "OTHER_WIFI");
@@ -301,22 +285,15 @@ class DeviceControllerMySqlTest {
         String accessToken = jwtTokenProvider.generateAccessToken(currentUserId);
         DeviceUpdateRequest request = new DeviceUpdateRequest(
                 new BigDecimal("24.0"),
-                null,
                 null
         );
 
-        ServletException exception = assertThrows(
-                ServletException.class,
-                () -> mockMvc.perform(patch("/airs/devices/NODE-UPDATE-OTHER")
-                                .header("Authorization", "Bearer " + accessToken)
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(objectMapper.writeValueAsString(request)))
-                        .andReturn()
-        );
-
-        assertNotNull(exception.getCause());
-        assertInstanceOf(IllegalArgumentException.class, exception.getCause());
-        assertEquals("해당 기기에 접근할 수 없습니다.", exception.getCause().getMessage());
+        mockMvc.perform(patch("/airs/devices/NODE-UPDATE-OTHER")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("해당 기기에 접근할 수 없습니다."));
     }
 
     private Long saveUser(String email) {

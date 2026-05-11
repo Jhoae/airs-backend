@@ -111,7 +111,7 @@ class AuthControllerMySqlTest {
     }
 
     @Test
-    void signUp_should_return_internal_server_error_when_email_is_duplicated() throws Exception {
+    void signUp_should_return_conflict_when_email_is_duplicated() throws Exception {
         SignUpRequest request = new SignUpRequest(
                 "duplicate-signup@example.com",
                 "Abcd1234!",
@@ -123,17 +123,11 @@ class AuthControllerMySqlTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated());
 
-        ServletException exception = org.junit.jupiter.api.Assertions.assertThrows(
-                ServletException.class,
-                () -> mockMvc.perform(post("/airs/auth/signup")
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(objectMapper.writeValueAsString(request)))
-                        .andReturn()
-        );
-
-        assertNotNull(exception.getCause());
-        assertInstanceOf(IllegalArgumentException.class, exception.getCause());
-        assertEquals("이미 사용 중인 이메일입니다.", exception.getCause().getMessage());
+        mockMvc.perform(post("/airs/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("이미 사용 중인 이메일입니다."));
     }
 
     @Test
@@ -160,7 +154,7 @@ class AuthControllerMySqlTest {
     }
 
     @Test
-    void login_should_return_internal_server_error_when_password_is_invalid() throws Exception {
+    void login_should_return_unauthorized_when_password_is_invalid() throws Exception {
         saveUserWithPreference(
                 "jaeho",
                 "login-fail@example.com",
@@ -172,23 +166,17 @@ class AuthControllerMySqlTest {
                 "Wrong1234!"
         );
 
-        ServletException exception = org.junit.jupiter.api.Assertions.assertThrows(
-                ServletException.class,
-                () -> mockMvc.perform(post("/airs/auth/login")
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content(objectMapper.writeValueAsString(request)))
-                        .andReturn()
-        );
-
-        assertNotNull(exception.getCause());
-        assertInstanceOf(IllegalArgumentException.class, exception.getCause());
-        assertEquals("이메일 또는 비밀번호가 올바르지 않습니다.", exception.getCause().getMessage());
+        mockMvc.perform(post("/airs/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("이메일 또는 비밀번호가 올바르지 않습니다."));
     }
 
     @Test
     void getMyInfo_should_return_forbidden_when_access_token_is_missing() throws Exception {
         mockMvc.perform(get("/airs/users/me"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

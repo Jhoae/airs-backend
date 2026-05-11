@@ -20,18 +20,18 @@ src/main/resources/application-local.properties
 src/main/resources/application-*.yml
 src/main/resources/application-*.yaml
 src/main/resources/application-*.properties
-!src/main/resources/application.yml
-!src/main/resources/application.yaml
-!src/main/resources/application.properties
+src/main/resources/application.yml
+src/main/resources/application.yaml
+src/main/resources/application.properties
 src/test/resources/application-test-local.yml
 src/test/resources/application-test-local.yaml
 src/test/resources/application-test-local.properties
 src/test/resources/application-*.yml
 src/test/resources/application-*.yaml
 src/test/resources/application-*.properties
-!src/test/resources/application.yml
-!src/test/resources/application.yaml
-!src/test/resources/application.properties
+src/test/resources/application.yml
+src/test/resources/application.yaml
+src/test/resources/application.properties
 
 *.pem
 *.key
@@ -39,3 +39,4 @@ src/test/resources/application-*.properties
 *.jks
 
 *.log
+openapi.yaml
