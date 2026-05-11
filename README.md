@@ -37,7 +37,6 @@
 
 ## Usage
 
-### 서버 실행
 
 다음 서비스가 먼저 실행 중이어야 합니다.
 
@@ -96,8 +95,7 @@ mqtt:
   topic: airs/node/+/dht22
 ```
 
-서버 실행:
-
+### 서버 실행
 ```sh
 ./gradlew bootRun
 ```
