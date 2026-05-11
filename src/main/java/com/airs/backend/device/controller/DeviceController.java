@@ -26,7 +26,7 @@ public class DeviceController {
     3. SecurityContextHolder에 Authentication을 넣어두고
     4. 그 다음 Spring MVC가 컨트롤러 메서드를 호출할 때
     5. Authentication 타입 파라미터를 보고 현재 인증 정보를 꺼내서 넣어주기 때문입니다
-     */
+    */
     @PostMapping
     public ResponseEntity<DeviceRegisterResponse> registerDevice(
             @Valid @RequestBody DeviceRegisterRequest request,

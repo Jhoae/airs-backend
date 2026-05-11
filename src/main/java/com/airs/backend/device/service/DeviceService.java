@@ -60,9 +60,6 @@ public class DeviceService {
 
     @Transactional(readOnly = true)
     public List<DeviceSummaryResponse> getMyDevices(Long userId) {
-        userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
-
         List<Device> devices = deviceRepository.findAllByUser_UserId(userId);
 
         return devices.stream()

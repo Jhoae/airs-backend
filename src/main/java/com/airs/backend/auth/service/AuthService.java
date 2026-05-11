@@ -50,7 +50,10 @@ public class AuthService {
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new IllegalArgumentException("이메일 또는 비밀번호가 올바르지 않습니다."));
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "이메일 또는 비밀번호가 올바르지 않습니다."
+                ));
 
         boolean isPasswordMatched = passwordEncoder.matches(
                 request.getPassword(),
