@@ -96,25 +96,9 @@ mqtt:
   topic: airs/node/+/dht22
 ```
 
-환경변수 확인:
+서버 실행:
 
 ```sh
-export DB_URL=your-mysql-url
-export DB_USERNAME=your-mysql-username
-export DB_PASSWORD=your-mysql-password
-export DDL_AUTO=update-or-validate
-export JWT_SECRET=your-jwt-secret
-export JWT_ACCESS_TOKEN_EXPIRATION_MINUTES=30
-export INFLUX_URL=your-influx-url
-export INFLUX_TOKEN=your-influx-token
-export INFLUX_ORG=your-influx-org
-export INFLUX_BUCKET=your-influx-bucket
-export INFLUX_MEASUREMENT=your-influx-measurement
-export INFLUX_NODE_ID_TAG=your-influx-node-id-tag
-export MQTT_HOST=your-mqtt-host
-export MQTT_PORT=your-mqtt-port
-export MQTT_TOPIC=your-mqtt-topic
-
 ./gradlew bootRun
 ```
 
