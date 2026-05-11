@@ -18,9 +18,9 @@ import lombok.RequiredArgsConstructor;
 
 @Component
 @RequiredArgsConstructor
-public class InfluxSensorDataWriter {
+public class InfluxDht22Writer {
 
-    private static final Logger log = LoggerFactory.getLogger(InfluxSensorDataWriter.class);
+    private static final Logger log = LoggerFactory.getLogger(InfluxDht22Writer.class);
 
     private final InfluxProperties influxProperties;
     private WriteApiBlocking writeApi;

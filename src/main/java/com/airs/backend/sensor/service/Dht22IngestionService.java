@@ -7,17 +7,17 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.airs.backend.sensor.dto.Dht22Payload;
-import com.airs.backend.sensor.influx.InfluxSensorDataWriter;
+import com.airs.backend.sensor.influx.InfluxDht22Writer;
 
 import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
-public class SensorDataIngestionService {
+public class Dht22IngestionService {
 
-    private static final Logger log = LoggerFactory.getLogger(SensorDataIngestionService.class);
+    private static final Logger log = LoggerFactory.getLogger(Dht22IngestionService.class);
 
-    private final InfluxSensorDataWriter influxSensorDataWriter;
+    private final InfluxDht22Writer influxDht22Writer;
 
     public void ingest(String nodeId, Dht22Payload payload) {
         if (nodeId == null || nodeId.isBlank()) {
@@ -53,6 +53,6 @@ public class SensorDataIngestionService {
             throw new IllegalArgumentException("humidity 값 범위가 올바르지 않습니다.");
         }
 
-        influxSensorDataWriter.write(nodeId, payload);
+        influxDht22Writer.write(nodeId, payload);
     }
 }

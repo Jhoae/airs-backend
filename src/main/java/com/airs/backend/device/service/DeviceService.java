@@ -8,8 +8,10 @@ import com.airs.backend.user.entity.UserPreference;
 import com.airs.backend.user.repository.UserPreferenceRepository;
 import com.airs.backend.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -23,10 +25,10 @@ public class DeviceService {
 
     public DeviceRegisterResponse registerDevice(Long userId, DeviceRegisterRequest request) {
         if (deviceRepository.existsById(request.getNodeId())) {
-            throw new IllegalArgumentException("이미 등록된 기기입니다.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 등록된 기기입니다.");
         }
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."));
 
         UserPreference userPreference = userPreferenceRepository.findById(userId)
                 .orElse(null);
@@ -77,10 +79,10 @@ public class DeviceService {
     @Transactional(readOnly = true)
     public DeviceDetailResponse getDevice(Long userId, String nodeId) {
         Device device = deviceRepository.findById(nodeId)
-                .orElseThrow(() -> new IllegalArgumentException("기기를 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "기기를 찾을 수 없습니다."));
 
         if (!device.getUser().getUserId().equals(userId)) {
-            throw new IllegalArgumentException("해당 기기에 접근할 수 없습니다.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 기기에 접근할 수 없습니다.");
         }
 
         return new DeviceDetailResponse(
@@ -100,10 +102,10 @@ public class DeviceService {
             DeviceUpdateRequest request
     ) {
         Device device = deviceRepository.findById(nodeId)
-                .orElseThrow(() -> new IllegalArgumentException("기기를 찾을 수 없습니다."));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "기기를 찾을 수 없습니다."));
 
         if (!device.getUser().getUserId().equals(userId)) {
-            throw new IllegalArgumentException("해당 기기에 접근할 수 없습니다.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "해당 기기에 접근할 수 없습니다.");
         }
 
         device.updateSettings(

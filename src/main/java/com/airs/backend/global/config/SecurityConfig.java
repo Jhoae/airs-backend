@@ -1,5 +1,6 @@
 package com.airs.backend.global.config;
 
+import com.airs.backend.global.exception.RestAuthenticationEntryPoint;
 import com.airs.backend.global.jwt.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +17,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final LocalhostOnlyInternalApiFilter localhostOnlyInternalApiFilter;
+    private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -39,11 +42,16 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 ) // 세션을 만들어서 로그인 상태를 저장하지 않고, jwt로 매 요청을 독립적으로 처리, stateless
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint(restAuthenticationEntryPoint)
+                ) // 인증이 필요한 요청인데, 인증이 안됐을때, restAuthenticationEntryPoint
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/airs/auth/signup", "/airs/auth/login").permitAll()
+                        .requestMatchers("/airs/internal/**").permitAll()
                         .anyRequest().authenticated()
                 ) // 공개 API, 보호 API 규칙
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(localhostOnlyInternalApiFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(jwtAuthenticationFilter, LocalhostOnlyInternalApiFilter.class);
                 // JWT 필터를 기본 UsernamePasswordAuthenticationFilter보다 앞쪽에서 실행하겠다
 
         // 위 보안 설정을 바탕으로

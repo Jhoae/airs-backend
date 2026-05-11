@@ -1,17 +1,19 @@
 package com.airs.backend.global.jwt;
 
+import java.io.IOException;
+
+import com.airs.backend.global.exception.RestAuthenticationEntryPoint;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-
-import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
@@ -21,6 +23,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
 
     // 실제 JWT 검사기.
     // 모든 요청에서 controller, service보다 먼저 이 메서드가 실행됨
@@ -48,7 +51,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = authorizationHeader.substring(BEARER_PREFIX.length());
 
         if (!jwtTokenProvider.validateToken(token)) {
-            filterChain.doFilter(request, response);
+            restAuthenticationEntryPoint.commence(
+                    request,
+                    response,
+                    new BadCredentialsException("유효하지 않은 토큰입니다.")
+            );
             return;
         }
 
@@ -61,7 +68,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // “현재 로그인 사용자는 userId=1인 사람이다"라는 인증 객체
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(
-                        userId,
+                        new CurrentUserPrincipal(userId),
                         null,
                         AuthorityUtils.NO_AUTHORITIES
                 );
@@ -79,6 +86,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 토큰 적절함
         // SecurityContextHolder에 인증 정보 등록
         // Spring Security가 “인증된 요청이네”라고 이해
-        // 보호 API(ex 기기조회) 수행
+        // 보호 API(ex 기기등록) 수행
     }
 }

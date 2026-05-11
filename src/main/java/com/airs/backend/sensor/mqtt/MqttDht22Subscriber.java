@@ -7,6 +7,7 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import lombok.RequiredArgsConstructor;
@@ -14,20 +15,21 @@ import org.springframework.stereotype.Component;
 
 import com.airs.backend.sensor.config.MqttProperties;
 import com.airs.backend.sensor.dto.Dht22Payload;
-import com.airs.backend.sensor.service.SensorDataIngestionService;
+import com.airs.backend.sensor.service.Dht22IngestionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.annotation.PreDestroy;
 
 @Component
 @RequiredArgsConstructor
-public class MqttSensorSubscriber {
+@ConditionalOnProperty(name = "mqtt.enabled", havingValue = "true", matchIfMissing = true)
+public class MqttDht22Subscriber {
 
-    private static final Logger log = LoggerFactory.getLogger(MqttSensorSubscriber.class);
+    private static final Logger log = LoggerFactory.getLogger(MqttDht22Subscriber.class);
 
     private final MqttProperties mqttProperties;
     private final ObjectMapper objectMapper;
-    private final SensorDataIngestionService sensorDataIngestionService;
+    private final Dht22IngestionService dht22IngestionService;
 
     private MqttClient mqttClient;
 
@@ -63,7 +65,7 @@ public class MqttSensorSubscriber {
         String nodeId = extractNodeId(topic);
 
         Dht22Payload payload = objectMapper.readValue(payloadJson, Dht22Payload.class);
-        sensorDataIngestionService.ingest(nodeId, payload);
+            dht22IngestionService.ingest(nodeId, payload);
     }
 
     private String extractNodeId(String topic) {
