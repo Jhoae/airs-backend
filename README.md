@@ -95,10 +95,6 @@ mqtt:
   topic: airs/node/+/dht22
 ```
 
-### 서버 실행
-```sh
-./gradlew bootRun
-```
 
 ### Docker / Compose 실행
 
@@ -108,27 +104,7 @@ mqtt:
 /home/pi/sogangairs/application.yaml
 ```
 
-2. `application.yaml`에서는 `localhost` 대신 compose 서비스명을 사용
-
-```yaml
-spring:
-  datasource:
-    url: jdbc:mysql://mysql:3306/airs
-
-influx:
-  url: http://influxdb:8086
-
-mqtt:
-  host: mosquitto
-```
-
-3. compose에서 backend 설정 파일을 `/app/config/application.yaml`로 mount
-
-```text
-/home/pi/sogangairs/application.yaml:/app/config/application.yaml:ro
-```
-
-4. compose로 backend 실행
+2. compose로 backend 실행
 
 ```sh
 docker compose up -d --build backend
