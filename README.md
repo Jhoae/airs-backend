@@ -44,7 +44,7 @@
 - InfluxDB
 - MQTT Broker
 
-실행 전 [application.yaml](/Users/ohjaeho/Desktop/AIRS_sideprj/backend/src/main/resources/application.yaml)에서 사용하는 환경변수를 셸에 먼저 설정해야 합니다.
+실행 전 application.yaml 값 또는 환경변수를 실행 환경에 맞게 준비해야 합니다.
 
 필수로 확인할 값:
 
@@ -69,7 +69,7 @@
 ```yaml
 spring:
   datasource:
-    url: jdbc:mysql://127.0.0.1:3306/airs
+    url: jdbc:mysql://mysql:3306/airs
     username: example_user
     password: example_password
 
@@ -82,7 +82,7 @@ jwt:
   access-token-expiration-minutes: 30
 
 influx:
-  url: http://localhost:8086
+  url: http://influxdb:8086
   token: example-influx-token
   org: example-org
   bucket: example-bucket
@@ -90,7 +90,7 @@ influx:
   node-id-tag: node_id
 
 mqtt:
-  host: localhost
+  host: mosquitto
   port: 1883
   topic: airs/node/+/dht22
 ```
@@ -100,27 +100,38 @@ mqtt:
 ./gradlew bootRun
 ```
 
-### Docker 실행
+### Docker / Compose 실행
 
 1. 라즈베리파이에 실제 설정 파일 준비
 
 ```text
-/home/pi/airs-config/application.yaml
+/home/pi/sogangairs/application.yaml
 ```
 
-2. `backend` 폴더에서 이미지 빌드
+2. `application.yaml`에서는 `localhost` 대신 compose 서비스명을 사용
 
-```sh
-docker build -t airs-backend .
+```yaml
+spring:
+  datasource:
+    url: jdbc:mysql://mysql:3306/airs
+
+influx:
+  url: http://influxdb:8086
+
+mqtt:
+  host: mosquitto
 ```
 
-3. 실행
+3. compose에서 backend 설정 파일을 `/app/config/application.yaml`로 mount
+
+```text
+/home/pi/sogangairs/application.yaml:/app/config/application.yaml:ro
+```
+
+4. compose로 backend 실행
 
 ```sh
-docker run --name airs-backend \
-  --network host \
-  -v /home/pi/airs-config/application.yaml:/app/config/application.yaml:ro \
-  airs-backend
+docker compose up -d --build backend
 ```
 
 [//]: # (## ERD)
