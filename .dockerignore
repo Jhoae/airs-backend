@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────────
+# AIRS Backend .dockerignore
+# build context 로 도커 데몬에 보낼 때 제외할 항목들
+# 빌드 속도 향상 + 이미지 캐시 효율 개선 + 민감 파일 차단
+# 위치: backend/.dockerignore
+# ─────────────────────────────────────────────────────────────────
+
+# Gradle 빌드 산출물 (컨테이너 안에서 다시 빌드하므로 호스트 산출물 불필요)
+build/
+.gradle/
+out/
+
+# IDE 설정
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS / 임시
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+*.log
+
+# Git (이미지에 .git 통째로 들어가면 용량 낭비)
+.git/
+.gitignore
+.gitattributes
+
+# 문서 / README (런타임에 불필요)
+docs/
+*.md
+
+# 환경변수 (절대 이미지에 박히면 안 됨)
+.env
+.env.*
+!.env.example
+src/main/resources/application.yaml
+
+# 테스트 결과물
+**/test-results/
+**/jacoco/

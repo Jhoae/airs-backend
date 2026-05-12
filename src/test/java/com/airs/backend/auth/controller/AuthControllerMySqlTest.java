@@ -3,6 +3,7 @@ package com.airs.backend.auth.controller;
 import com.airs.backend.auth.dto.LoginRequest;
 import com.airs.backend.auth.dto.SignUpRequest;
 import com.airs.backend.device.repository.DeviceRepository;
+import com.airs.backend.global.jwt.JwtTokenProvider;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserPreference;
 import com.airs.backend.user.repository.UserPreferenceRepository;
@@ -55,6 +56,9 @@ class AuthControllerMySqlTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JwtTokenProvider jwtTokenProvider;
 
     @Autowired
     private TransactionTemplate transactionTemplate;
@@ -174,9 +178,31 @@ class AuthControllerMySqlTest {
     }
 
     @Test
+    void login_should_return_unauthorized_when_email_is_unknown() throws Exception {
+        LoginRequest request = new LoginRequest(
+                "missing-user@example.com",
+                "Abcd1234!"
+        );
+
+        mockMvc.perform(post("/airs/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("이메일 또는 비밀번호가 올바르지 않습니다."));
+    }
+
+    @Test
     void getMyInfo_should_return_forbidden_when_access_token_is_missing() throws Exception {
         mockMvc.perform(get("/airs/users/me"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getMyInfo_should_return_unauthorized_when_access_token_is_invalid() throws Exception {
+        mockMvc.perform(get("/airs/users/me")
+                        .header("Authorization", "Bearer invalid-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("유효하지 않은 토큰입니다."));
     }
 
     @Test
@@ -208,6 +234,16 @@ class AuthControllerMySqlTest {
                 .andExpect(jsonPath("$.email").value("me-success@example.com"))
                 .andExpect(jsonPath("$.nickname").value("jaeho"))
                 .andExpect(jsonPath("$.role").value("USER"));
+    }
+
+    @Test
+    void getMyInfo_should_return_not_found_when_user_does_not_exist() throws Exception {
+        String accessToken = jwtTokenProvider.generateAccessToken(999_999L);
+
+        mockMvc.perform(get("/airs/users/me")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("사용자를 찾을 수 없습니다."));
     }
 
     private Long saveUserWithPreference(String nickname, String email, String rawPassword) {

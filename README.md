@@ -100,6 +100,29 @@ mqtt:
 ./gradlew bootRun
 ```
 
-## ERD
+### Docker 실행
 
-![AIRS Backend ERD](docs/erd/backend-erd.png)
+1. 라즈베리파이에 실제 설정 파일 준비
+
+```text
+/home/pi/airs-config/application.yaml
+```
+
+2. `backend` 폴더에서 이미지 빌드
+
+```sh
+docker build -t airs-backend .
+```
+
+3. 실행
+
+```sh
+docker run --name airs-backend \
+  --network host \
+  -v /home/pi/airs-config/application.yaml:/app/config/application.yaml:ro \
+  airs-backend
+```
+
+[//]: # (## ERD)
+
+[//]: # (![AIRS Backend ERD]&#40;docs/erd/backend-erd.png&#41;)
