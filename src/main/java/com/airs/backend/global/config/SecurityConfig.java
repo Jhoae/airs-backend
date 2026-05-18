@@ -46,6 +46,7 @@ public class SecurityConfig {
                         .authenticationEntryPoint(restAuthenticationEntryPoint)
                 ) // 인증이 필요한 요청인데, 인증이 안됐을때, restAuthenticationEntryPoint
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/airs/auth/signup", "/airs/auth/login").permitAll()
                         .requestMatchers("/airs/internal/**").permitAll()
                         .anyRequest().authenticated()
