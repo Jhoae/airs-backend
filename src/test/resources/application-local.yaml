@@ -1,0 +1,30 @@
+spring:
+  datasource:
+    url: jdbc:tc:mysql:8.4:///airs_test?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+    username: test
+    password: test
+  jpa:
+    hibernate:
+      ddl-auto: create
+    open-in-view: false
+
+mqtt:
+  enabled: false
+
+airs:
+  seed:
+    sogang-root-admin:
+      enabled: false
+
+jwt:
+  secret-key: test-local-jwt-secret-key-that-is-long-enough-12345
+  access-token-expiration-minutes: 30
+
+influx:
+  url: http://localhost:8086
+  token: dummy-test-influx-token
+  org: test-org
+  bucket: test-bucket
+  measurement: dht22
+  node-id-tag: nodeId

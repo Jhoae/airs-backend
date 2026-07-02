@@ -12,12 +12,14 @@ import com.airs.backend.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "airs.seed.sogang-root-admin.enabled", havingValue = "true", matchIfMissing = true)
 public class SogangRootAdminSeeder implements ApplicationRunner {
 
     private static final String DEFAULT_CAMPUS_NAME = "서강대학교";
