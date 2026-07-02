@@ -35,6 +35,10 @@
 
 ![AIRS Backend System Architecture](docs/architecture/system-architecture.png)
 
+## ERD
+
+![AIRS Backend ERD](docs/erd/airs-erd.png)
+
 ## Usage
 
 
@@ -98,7 +102,3 @@ AIRS_INFLUX_TOKEN, DB 비밀번호, JWT secret 등은 실제 운영 값으로 �
 ```sh
 docker compose up -d --build
 ```
-
-[//]: # (## ERD)
-
-[//]: # (![AIRS Backend ERD]&#40;docs/erd/backend-erd.png&#41;)
