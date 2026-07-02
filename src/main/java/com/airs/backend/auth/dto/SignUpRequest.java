@@ -2,8 +2,10 @@ package com.airs.backend.auth.dto;
 
 
 import com.airs.backend.user.UserPolicy;
+import com.airs.backend.user.entity.UserRole;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -43,4 +45,13 @@ public class SignUpRequest {
     )
     private String nickname;
 
+    @NotBlank(message = "전화번호는 필수입니다.")
+    @Size(max = 20, message = "전화번호는 20자 이하여야 합니다.")
+    private String phone;
+
+    @NotNull(message = "캠퍼스는 필수입니다.")
+    private Long campusId;
+
+    @NotNull(message = "역할은 필수입니다.")
+    private UserRole role;
 }

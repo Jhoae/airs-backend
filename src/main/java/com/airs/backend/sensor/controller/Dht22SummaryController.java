@@ -20,7 +20,7 @@ import lombok.RequiredArgsConstructor;
 // for React
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/airs/devices")
+@RequestMapping("/airs/nodes")
 public class Dht22SummaryController {
 
     private final Dht22SummaryService dht22SummaryService;

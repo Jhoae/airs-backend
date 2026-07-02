@@ -2,10 +2,14 @@ package com.airs.backend.auth.controller;
 
 import com.airs.backend.auth.dto.LoginRequest;
 import com.airs.backend.auth.dto.SignUpRequest;
-import com.airs.backend.device.repository.DeviceRepository;
 import com.airs.backend.global.jwt.JwtTokenProvider;
+import com.airs.backend.location.entity.Campus;
+import com.airs.backend.location.repository.CampusRepository;
+import com.airs.backend.user.entity.CampusAdmin;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserPreference;
+import com.airs.backend.user.entity.UserRole;
+import com.airs.backend.user.repository.CampusAdminRepository;
 import com.airs.backend.user.repository.UserPreferenceRepository;
 import com.airs.backend.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -52,7 +56,10 @@ class AuthControllerMySqlTest {
     private UserPreferenceRepository userPreferenceRepository;
 
     @Autowired
-    private DeviceRepository deviceRepository;
+    private CampusRepository campusRepository;
+
+    @Autowired
+    private CampusAdminRepository campusAdminRepository;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -65,17 +72,22 @@ class AuthControllerMySqlTest {
 
     @AfterEach
     void cleanUp() {
-        deviceRepository.deleteAllInBatch();
+        campusAdminRepository.deleteAllInBatch();
         userPreferenceRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
+        campusRepository.deleteAllInBatch();
     }
 
     @Test
     void signUp_should_create_user_and_user_preference_in_mysql() throws Exception {
+        Long campusId = saveCampus("signup-success-campus");
         SignUpRequest request = new SignUpRequest(
                 "signup-success@example.com",
                 "Abcd1234!",
-                "jaeho"
+                "jaeho",
+                "01012345678",
+                campusId,
+                UserRole.USER
         );
 
         mockMvc.perform(post("/airs/auth/signup")
@@ -83,18 +95,59 @@ class AuthControllerMySqlTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.email").value("signup-success@example.com"))
-                .andExpect(jsonPath("$.nickname").value("jaeho"));
+                .andExpect(jsonPath("$.nickname").value("jaeho"))
+                .andExpect(jsonPath("$.phone").value("01012345678"))
+                .andExpect(jsonPath("$.campusId").value(campusId))
+                .andExpect(jsonPath("$.role").value("USER"))
+                .andExpect(jsonPath("$.adminApproved").doesNotExist());
 
-        User savedUser = userRepository.findByEmail("signup-success@example.com")
-                .orElseThrow();
+        transactionTemplate.executeWithoutResult(status -> {
+            User savedUser = userRepository.findByEmail("signup-success@example.com")
+                    .orElseThrow();
 
-        UserPreference savedPreference = userPreferenceRepository.findById(savedUser.getUserId())
-                .orElseThrow();
+            UserPreference savedPreference = userPreferenceRepository.findById(savedUser.getUserId())
+                    .orElseThrow();
 
-        assertNotNull(savedUser.getUserId());
-        assertFalse(savedUser.getPasswordHash().equals("Abcd1234!"));
-        assertTrue(passwordEncoder.matches("Abcd1234!", savedUser.getPasswordHash()));
-        assertEquals(savedUser.getUserId(), savedPreference.getUserId());
+            assertNotNull(savedUser.getUserId());
+            assertEquals(campusId, savedUser.getCampusId());
+            assertEquals("01012345678", savedUser.getPhone());
+            assertEquals(UserRole.USER, savedUser.getRole());
+            assertFalse(savedUser.getPasswordHash().equals("Abcd1234!"));
+            assertTrue(passwordEncoder.matches("Abcd1234!", savedUser.getPasswordHash()));
+            assertEquals(savedUser.getUserId(), savedPreference.getUserId());
+        });
+    }
+
+    @Test
+    void signUp_should_create_pending_admin_when_role_is_admin() throws Exception {
+        Long campusId = saveCampus("signup-admin-campus");
+        SignUpRequest request = new SignUpRequest(
+                "signup-admin@example.com",
+                "Abcd1234!",
+                "admin",
+                "01012345678",
+                campusId,
+                UserRole.ADMIN
+        );
+
+        mockMvc.perform(post("/airs/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.email").value("signup-admin@example.com"))
+                .andExpect(jsonPath("$.campusId").value(campusId))
+                .andExpect(jsonPath("$.role").value("ADMIN"))
+                .andExpect(jsonPath("$.adminApproved").value(false));
+
+        transactionTemplate.executeWithoutResult(status -> {
+            User savedUser = userRepository.findByEmail("signup-admin@example.com")
+                    .orElseThrow();
+            CampusAdmin campusAdmin = campusAdminRepository.findByUser_Id(savedUser.getUserId())
+                    .orElseThrow();
+
+            assertEquals(campusId, campusAdmin.getCampus().getCampusId());
+            assertFalse(campusAdmin.isApproved());
+        });
     }
 
     @Test
@@ -102,7 +155,10 @@ class AuthControllerMySqlTest {
         SignUpRequest request = new SignUpRequest(
                 "invalid-email",
                 "1234",
-                "a"
+                "a",
+                "",
+                null,
+                null
         );
 
         mockMvc.perform(post("/airs/auth/signup")
@@ -116,10 +172,14 @@ class AuthControllerMySqlTest {
 
     @Test
     void signUp_should_return_conflict_when_email_is_duplicated() throws Exception {
+        Long campusId = saveCampus("duplicate-signup-campus");
         SignUpRequest request = new SignUpRequest(
                 "duplicate-signup@example.com",
                 "Abcd1234!",
-                "jaeho"
+                "jaeho",
+                "01012345678",
+                campusId,
+                UserRole.USER
         );
 
         mockMvc.perform(post("/airs/auth/signup")
@@ -136,10 +196,13 @@ class AuthControllerMySqlTest {
 
     @Test
     void login_should_return_access_token_when_credentials_are_valid() throws Exception {
+        Long campusId = saveCampus("login-success-campus");
         Long userId = saveUserWithPreference(
                 "jaeho",
                 "login-success@example.com",
-                "Abcd1234!"
+                "Abcd1234!",
+                campusId,
+                UserRole.USER
         );
 
         LoginRequest request = new LoginRequest(
@@ -153,8 +216,11 @@ class AuthControllerMySqlTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isString())
                 .andExpect(jsonPath("$.userId").value(userId))
+                .andExpect(jsonPath("$.campusId").value(campusId))
                 .andExpect(jsonPath("$.email").value("login-success@example.com"))
-                .andExpect(jsonPath("$.nickname").value("jaeho"));
+                .andExpect(jsonPath("$.nickname").value("jaeho"))
+                .andExpect(jsonPath("$.role").value("USER"))
+                .andExpect(jsonPath("$.adminApproved").doesNotExist());
     }
 
     @Test
@@ -162,7 +228,9 @@ class AuthControllerMySqlTest {
         saveUserWithPreference(
                 "jaeho",
                 "login-fail@example.com",
-                "Abcd1234!"
+                "Abcd1234!",
+                saveCampus("login-fail-campus"),
+                UserRole.USER
         );
 
         LoginRequest request = new LoginRequest(
@@ -174,7 +242,7 @@ class AuthControllerMySqlTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("이메일 또는 비밀번호가 올바르지 않습니다."));
+                .andExpect(jsonPath("$.message").value("아이디 또는 비밀번호가 올바르지 않습니다."));
     }
 
     @Test
@@ -188,7 +256,7 @@ class AuthControllerMySqlTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("이메일 또는 비밀번호가 올바르지 않습니다."));
+                .andExpect(jsonPath("$.message").value("아이디 또는 비밀번호가 올바르지 않습니다."));
     }
 
     @Test
@@ -207,10 +275,13 @@ class AuthControllerMySqlTest {
 
     @Test
     void getMyInfo_should_return_current_user_info_when_access_token_is_valid() throws Exception {
+        Long campusId = saveCampus("me-success-campus");
         Long userId = saveUserWithPreference(
                 "jaeho",
                 "me-success@example.com",
-                "Abcd1234!"
+                "Abcd1234!",
+                campusId,
+                UserRole.USER
         );
 
         LoginRequest loginRequest = new LoginRequest(
@@ -231,8 +302,10 @@ class AuthControllerMySqlTest {
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(userId))
+                .andExpect(jsonPath("$.campusId").value(campusId))
                 .andExpect(jsonPath("$.email").value("me-success@example.com"))
                 .andExpect(jsonPath("$.nickname").value("jaeho"))
+                .andExpect(jsonPath("$.phone").value("01012345678"))
                 .andExpect(jsonPath("$.role").value("USER"));
     }
 
@@ -246,13 +319,26 @@ class AuthControllerMySqlTest {
                 .andExpect(jsonPath("$.message").value("사용자를 찾을 수 없습니다."));
     }
 
-    private Long saveUserWithPreference(String nickname, String email, String rawPassword) {
+    private Long saveCampus(String name) {
+        return campusRepository.save(new Campus(name, null, null, null)).getCampusId();
+    }
+
+    private Long saveUserWithPreference(
+            String nickname,
+            String email,
+            String rawPassword,
+            Long campusId,
+            UserRole role
+    ) {
         return transactionTemplate.execute(status -> {
+            Campus campus = campusRepository.findById(campusId).orElseThrow();
             User user = userRepository.save(new User(
+                    campus,
                     nickname,
                     email,
                     passwordEncoder.encode(rawPassword),
-                    null
+                    "01012345678",
+                    role
             ));
 
             UserPreference userPreference = new UserPreference(null, null, null);

@@ -48,6 +48,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/airs/auth/signup", "/airs/auth/login").permitAll()
+                        .requestMatchers("/airs/campuses").permitAll()
                         .requestMatchers("/airs/internal/**").permitAll()
                         .anyRequest().authenticated()
                 ) // 공개 API, 보호 API 규칙

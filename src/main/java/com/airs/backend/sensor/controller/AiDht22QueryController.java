@@ -17,7 +17,7 @@ import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/airs/internal/devices")
+@RequestMapping("/airs/internal/nodes")
 public class AiDht22QueryController {
 
     private final AiDht22QueryService aiDht22QueryService;

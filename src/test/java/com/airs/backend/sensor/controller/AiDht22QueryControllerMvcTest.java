@@ -39,7 +39,7 @@ class AiDht22QueryControllerMvcTest {
                 new Dht22MeasurementItem(26.5, 50.3, Instant.parse("2026-05-06T00:00:05Z"))
         ));
 
-        mockMvc.perform(get("/airs/internal/devices/node_01/measurements/range")
+        mockMvc.perform(get("/airs/internal/nodes/node_01/measurements/range")
                         .param("from", "2026-05-06T00:00:00Z")
                         .param("to", "2026-05-06T01:00:00Z")
                         .with(request -> {
@@ -55,7 +55,7 @@ class AiDht22QueryControllerMvcTest {
 
     @Test
     void getRange_should_return_forbidden_when_request_is_not_from_localhost() throws Exception {
-        mockMvc.perform(get("/airs/internal/devices/node_01/measurements/range")
+        mockMvc.perform(get("/airs/internal/nodes/node_01/measurements/range")
                         .param("from", "2026-05-06T00:00:00Z")
                         .param("to", "2026-05-06T01:00:00Z")
                         .with(request -> {
@@ -69,7 +69,7 @@ class AiDht22QueryControllerMvcTest {
 
     @Test
     void getRange_should_return_bad_request_when_from_is_missing() throws Exception {
-        mockMvc.perform(get("/airs/internal/devices/node_01/measurements/range")
+        mockMvc.perform(get("/airs/internal/nodes/node_01/measurements/range")
                         .param("to", "2026-05-06T01:00:00Z")
                         .with(request -> {
                             request.setRemoteAddr("127.0.0.1");
@@ -80,7 +80,7 @@ class AiDht22QueryControllerMvcTest {
 
     @Test
     void getRange_should_return_bad_request_when_from_is_after_to() throws Exception {
-        mockMvc.perform(get("/airs/internal/devices/node_01/measurements/range")
+        mockMvc.perform(get("/airs/internal/nodes/node_01/measurements/range")
                         .param("from", "2026-05-06T02:00:00Z")
                         .param("to", "2026-05-06T01:00:00Z")
                         .with(request -> {

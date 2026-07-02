@@ -1,6 +1,7 @@
 package com.airs.backend.sensor.mqtt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -50,6 +51,7 @@ class MqttDht22SubscriberTest {
                 {
                   "temperature": 26.5,
                   "humidity": 50.3,
+                  "co2": 842,
                   "timestamp": "2026-04-10T10:00:00Z"
                 }
                 """;
@@ -68,6 +70,7 @@ class MqttDht22SubscriberTest {
         Dht22Payload payload = payloadCaptor.getValue();
         assertEquals(26.5, payload.getTemperature());
         assertEquals(50.3, payload.getHumidity());
+        assertEquals(842, payload.getCo2Ppm());
         assertEquals(Instant.parse("2026-04-10T10:00:00Z"), payload.getTimestamp());
     }
 
@@ -77,6 +80,7 @@ class MqttDht22SubscriberTest {
                 {
                   "temperature": 26.5,
                   "humidity": 50.3,
+                  "co2_ppm": 956,
                   "abc": "ignored"
                 }
                 """;
@@ -95,6 +99,33 @@ class MqttDht22SubscriberTest {
         Dht22Payload payload = payloadCaptor.getValue();
         assertEquals(26.5, payload.getTemperature());
         assertEquals(50.3, payload.getHumidity());
+        assertEquals(956, payload.getCo2Ppm());
+    }
+
+    @Test
+    void handleMessage_should_accept_current_broker_payload_without_co2() throws Exception {
+        String json = """
+                {
+                  "temperature": 21.1,
+                  "humidity": 63.1
+                }
+                """;
+        MqttMessage message = new MqttMessage(json.getBytes(StandardCharsets.UTF_8));
+
+        ReflectionTestUtils.invokeMethod(
+                mqttDht22Subscriber,
+                "handleMessage",
+                "airs/node/node_01/dht22",
+                message
+        );
+
+        ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
+        verify(dht22IngestionService).ingest(eq("node_01"), payloadCaptor.capture());
+
+        Dht22Payload payload = payloadCaptor.getValue();
+        assertEquals(21.1, payload.getTemperature());
+        assertEquals(63.1, payload.getHumidity());
+        assertNull(payload.getCo2Ppm());
     }
 
     @Test

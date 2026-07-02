@@ -11,8 +11,11 @@ import java.time.LocalDateTime;
 public class UserMeResponse {
 
     private Long userId;
+    private Long campusId;
     private String email;
     private String nickname;
+    private String phone;
     private UserRole role;
+    private Boolean adminApproved;
     private LocalDateTime createdAt;
 }

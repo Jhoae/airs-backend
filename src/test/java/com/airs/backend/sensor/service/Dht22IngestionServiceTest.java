@@ -1,9 +1,12 @@
 package com.airs.backend.sensor.service;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -13,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -24,6 +28,9 @@ class Dht22IngestionServiceTest {
 
     @Mock
     private InfluxDht22Writer influxDht22Writer;
+
+    @Mock
+    private Dht22SnapshotUpdateService dht22SnapshotUpdateService;
 
     @InjectMocks
     private Dht22IngestionService dht22IngestionService;
@@ -41,6 +48,7 @@ class Dht22IngestionServiceTest {
         assertEquals(26.5, savedPayload.getTemperature());
         assertEquals(50.3, savedPayload.getHumidity());
         assertNotNull(savedPayload.getTimestamp());
+        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(savedPayload));
     }
 
     @Test
@@ -54,6 +62,35 @@ class Dht22IngestionServiceTest {
         verify(influxDht22Writer).write(eq("node_01"), payloadCaptor.capture());
 
         assertEquals(timestamp, payloadCaptor.getValue().getTimestamp());
+        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payloadCaptor.getValue()));
+
+        InOrder inOrder = inOrder(dht22SnapshotUpdateService, influxDht22Writer);
+        inOrder.verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload));
+        inOrder.verify(influxDht22Writer).write(eq("node_01"), eq(payload));
+    }
+
+    @Test
+    void ingest_should_try_influx_write_when_mysql_snapshot_update_fails() {
+        Dht22Payload payload = new Dht22Payload(25.0, 45.0, Instant.parse("2026-04-10T10:00:00Z"));
+        doThrow(new RuntimeException("mysql snapshot failure"))
+                .when(dht22SnapshotUpdateService).updateLatestSnapshot("node_01", payload);
+
+        assertDoesNotThrow(() -> dht22IngestionService.ingest("node_01", payload));
+
+        verify(dht22SnapshotUpdateService).updateLatestSnapshot("node_01", payload);
+        verify(influxDht22Writer).write("node_01", payload);
+    }
+
+    @Test
+    void ingest_should_keep_mysql_snapshot_update_when_influx_write_fails() {
+        Dht22Payload payload = new Dht22Payload(25.0, 45.0, Instant.parse("2026-04-10T10:00:00Z"));
+        doThrow(new RuntimeException("influx write failure"))
+                .when(influxDht22Writer).write("node_01", payload);
+
+        assertDoesNotThrow(() -> dht22IngestionService.ingest("node_01", payload));
+
+        verify(dht22SnapshotUpdateService).updateLatestSnapshot("node_01", payload);
+        verify(influxDht22Writer).write("node_01", payload);
     }
 
     @Test
@@ -63,7 +100,7 @@ class Dht22IngestionServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> dht22IngestionService.ingest("node_01", payload));
 
-        verifyNoInteractions(influxDht22Writer);
+        verifyNoInteractions(influxDht22Writer, dht22SnapshotUpdateService);
     }
 
     @Test
@@ -73,6 +110,16 @@ class Dht22IngestionServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> dht22IngestionService.ingest("node_01", payload));
 
-        verifyNoInteractions(influxDht22Writer);
+        verifyNoInteractions(influxDht22Writer, dht22SnapshotUpdateService);
+    }
+
+    @Test
+    void ingest_should_fail_when_co2_is_negative() {
+        Dht22Payload payload = new Dht22Payload(26.5, 50.3, -1, Instant.now());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> dht22IngestionService.ingest("node_01", payload));
+
+        verifyNoInteractions(influxDht22Writer, dht22SnapshotUpdateService);
     }
 }

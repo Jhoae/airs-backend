@@ -59,6 +59,10 @@ public class InfluxDht22Writer {
                 .addField("humidity", payload.getHumidity())
                 .time(payload.getTimestamp(), WritePrecision.MS);
 
+        if (payload.getCo2Ppm() != null) {
+            point.addField("co2", payload.getCo2Ppm());
+        }
+
         writeApi.writePoint(point);
         log.debug("InfluxDB에 센서 데이터를 저장했습니다. nodeId={}", nodeId);
     }

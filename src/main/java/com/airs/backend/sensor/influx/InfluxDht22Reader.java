@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import com.airs.backend.sensor.config.InfluxProperties;
+import com.airs.backend.sensor.dto.Co2TrendItem;
 import com.airs.backend.sensor.dto.DailyDht22SummaryResponse;
 import com.airs.backend.sensor.dto.Dht22MeasurementItem;
 import com.influxdb.client.InfluxDBClient;
@@ -164,6 +165,59 @@ public class InfluxDht22Reader {
         return queryMeasurements(nodeId, from, to);
     }
 
+
+    // 노드 상세 페이지
+    public List<Co2TrendItem> readCo2Trend(String nodeId, Instant from, Instant to, String window) {
+        if (nodeId == null || nodeId.isBlank()) {
+            throw new IllegalArgumentException("nodeId가 비어 있습니다.");
+        }
+
+        if (from == null) {
+            throw new IllegalArgumentException("from이 비어 있습니다.");
+        }
+
+        if (to == null) {
+            throw new IllegalArgumentException("to가 비어 있습니다.");
+        }
+
+        if (from.isAfter(to)) {
+            throw new IllegalArgumentException("from은 to보다 이후일 수 없습니다.");
+        }
+
+        if (window == null || !window.matches("\\d+[smhd]")) {
+            throw new IllegalArgumentException("window 형식이 올바르지 않습니다.");
+        }
+
+        if (queryApi == null) {
+            throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
+        }
+
+        String query = """
+                from(bucket: "%s")
+                  |> range(start: time(v: "%s"), stop: time(v: "%s"))
+                  |> filter(fn: (r) => r._measurement == "%s")
+                  |> filter(fn: (r) => r.%s == "%s")
+                  |> filter(fn: (r) => r._field == "co2")
+                  |> aggregateWindow(every: %s, fn: mean, createEmpty: false)
+                  |> sort(columns: ["_time"])
+                """.formatted(
+                influxProperties.getBucket(),
+                from,
+                to,
+                influxProperties.getMeasurement(),
+                influxProperties.getNodeIdTag(),
+                nodeId.replace("\"", "\\\""),
+                window
+        );
+
+        List<FluxTable> tables = queryApi.query(query, influxProperties.getOrg());
+
+        return tables.stream()
+                .flatMap(table -> table.getRecords().stream())
+                .map(record -> toCo2TrendItem(record))
+                .toList();
+    }
+
     private List<Dht22MeasurementItem> queryMeasurements(String nodeId, Instant from, Instant to) {
         if (queryApi == null) {
             throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
@@ -174,7 +228,7 @@ public class InfluxDht22Reader {
                   |> range(start: time(v: "%s"), stop: time(v: "%s"))
                   |> filter(fn: (r) => r._measurement == "%s")
                   |> filter(fn: (r) => r.%s == "%s")
-                  |> filter(fn: (r) => r._field == "temperature" or r._field == "humidity")
+                  |> filter(fn: (r) => r._field == "temperature" or r._field == "humidity" or r._field == "co2")
                   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
                   |> sort(columns: ["_time"])
                 """.formatted(
@@ -197,6 +251,7 @@ public class InfluxDht22Reader {
     private Dht22MeasurementItem toMeasurementItem(FluxRecord record) {
         Object temperatureValue = record.getValueByKey("temperature");
         Object humidityValue = record.getValueByKey("humidity");
+        Object co2Value = record.getValueByKey("co2");
 
         if (!(temperatureValue instanceof Number temperatureNumber)) {
             throw new IllegalStateException("temperature 필드를 Double로 변환할 수 없습니다.");
@@ -208,6 +263,7 @@ public class InfluxDht22Reader {
 
         Double temperature = temperatureNumber.doubleValue();
         Double humidity = humidityNumber.doubleValue();
+        Integer co2Ppm = toIntegerOrNull(co2Value);
 
         if (record.getTime() == null) {
             throw new IllegalStateException("InfluxDB DHT22 조회 결과에 필요한 값이 없습니다.");
@@ -216,8 +272,32 @@ public class InfluxDht22Reader {
         return new Dht22MeasurementItem(
                 temperature,
                 humidity,
+                co2Ppm,
                 record.getTime()
         );
+    }
+
+    private Co2TrendItem toCo2TrendItem(FluxRecord record) {
+        Integer co2Ppm = toIntegerOrNull(record.getValue());
+
+        if (co2Ppm == null || record.getTime() == null) {
+            throw new IllegalStateException("InfluxDB CO2 조회 결과에 필요한 값이 없습니다.");
+        }
+
+        return new Co2TrendItem(
+                record.getTime(),
+                co2Ppm
+        );
+    }
+
+    private Integer toIntegerOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof Number number)) {
+            throw new IllegalStateException("co2 필드를 Integer로 변환할 수 없습니다.");
+        }
+        return (int) Math.round(number.doubleValue());
     }
 
     @PreDestroy

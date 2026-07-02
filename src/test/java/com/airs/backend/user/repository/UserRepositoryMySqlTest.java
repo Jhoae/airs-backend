@@ -1,6 +1,5 @@
 package com.airs.backend.user.repository;
 
-import com.airs.backend.device.repository.DeviceRepository;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserRole;
 import org.junit.jupiter.api.AfterEach;
@@ -23,12 +22,8 @@ class UserRepositoryMySqlTest {
     @Autowired
     private UserPreferenceRepository userPreferenceRepository;
 
-    @Autowired
-    private DeviceRepository deviceRepository;
-
     @AfterEach
     void cleanUp() {
-        deviceRepository.deleteAllInBatch();
         userPreferenceRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
     }

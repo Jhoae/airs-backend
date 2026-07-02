@@ -8,7 +8,7 @@ public final class UserPolicy {
     public static final int PASSWORD_MAX_LENGTH = 30;
 
     public static final int NICKNAME_MIN_LENGTH = 2;
-    public static final int NICKNAME_MAX_LENGTH = 10;
+    public static final int NICKNAME_MAX_LENGTH = 20;
 
     private UserPolicy() {
     }

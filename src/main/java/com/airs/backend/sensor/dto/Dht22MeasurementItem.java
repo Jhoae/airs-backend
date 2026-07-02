@@ -13,5 +13,12 @@ public class Dht22MeasurementItem {
 
     private Double temperature;
     private Double humidity;
+    private Integer co2Ppm;
     private Instant timestamp;
+
+    public Dht22MeasurementItem(Double temperature, Double humidity, Instant timestamp) {
+        this.temperature = temperature;
+        this.humidity = humidity;
+        this.timestamp = timestamp;
+    }
 }

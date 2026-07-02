@@ -37,8 +37,15 @@ docs/
 .env
 .env.*
 !.env.example
+docker-compose.override.yml
+docker-compose.override.yaml
+src/main/resources/application.yml
 src/main/resources/application.yaml
+src/main/resources/application-*.yml
+src/main/resources/application-*.yaml
+src/main/resources/application-*.properties
 
-# 테스트 결과물
+# 테스트 코드 / 테스트 결과물
+src/test/
 **/test-results/
 **/jacoco/

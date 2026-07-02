@@ -1,8 +1,11 @@
 package com.airs.backend.auth.service;
 
 import com.airs.backend.auth.dto.SignUpRequest;
-import com.airs.backend.device.repository.DeviceRepository;
+import com.airs.backend.location.entity.Campus;
+import com.airs.backend.location.repository.CampusRepository;
 import com.airs.backend.user.entity.UserPreference;
+import com.airs.backend.user.entity.UserRole;
+import com.airs.backend.user.repository.CampusAdminRepository;
 import com.airs.backend.user.repository.UserPreferenceRepository;
 import com.airs.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -32,7 +35,10 @@ class AuthServiceTransactionMySqlTest {
     private UserPreferenceRepository userPreferenceRepository;
 
     @Autowired
-    private DeviceRepository deviceRepository;
+    private CampusRepository campusRepository;
+
+    @Autowired
+    private CampusAdminRepository campusAdminRepository;
 
     @SpyBean
     private UserPreferenceRepository userPreferenceRepositorySpy;
@@ -40,17 +46,22 @@ class AuthServiceTransactionMySqlTest {
     @AfterEach
     void cleanUp() {
         Mockito.reset(userPreferenceRepositorySpy);
-        deviceRepository.deleteAllInBatch();
+        campusAdminRepository.deleteAllInBatch();
         userPreferenceRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
+        campusRepository.deleteAllInBatch();
     }
 
     @Test
     void signUp_should_rollback_user_insert_when_user_preference_save_fails() {
+        Long campusId = campusRepository.save(new Campus("rollback-signup-campus", null, null, null)).getCampusId();
         SignUpRequest request = new SignUpRequest(
                 "rollback-signup@example.com",
                 "Abcd1234!",
-                "jaeho"
+                "jaeho",
+                "01012345678",
+                campusId,
+                UserRole.USER
         );
 
         doThrow(new RuntimeException("회원가입 중 강제 실패"))

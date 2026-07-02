@@ -1,0 +1,90 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: airs-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${AIRS_MYSQL_DATABASE}
+      MYSQL_USER: ${AIRS_MYSQL_USER}
+      MYSQL_PASSWORD: ${AIRS_MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${AIRS_MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Seoul
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: airs-influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${AIRS_INFLUX_USERNAME}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${AIRS_INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${AIRS_INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${AIRS_INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${AIRS_INFLUX_TOKEN}
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: airs-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: airs-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${AIRS_MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: ${AIRS_MYSQL_USER}
+      SPRING_DATASOURCE_PASSWORD: ${AIRS_MYSQL_PASSWORD}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: ${AIRS_DDL_AUTO}
+      JWT_SECRET_KEY: ${AIRS_JWT_SECRET_KEY}
+      JWT_ACCESS_TOKEN_EXPIRATION_MINUTES: ${AIRS_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES}
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${AIRS_INFLUX_TOKEN}
+      INFLUX_ORG: ${AIRS_INFLUX_ORG}
+      INFLUX_BUCKET: ${AIRS_INFLUX_BUCKET}
+      INFLUX_MEASUREMENT: ${AIRS_INFLUX_MEASUREMENT}
+      INFLUX_NODE_ID_TAG: ${AIRS_INFLUX_NODE_ID_TAG}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_TOPIC: ${AIRS_MQTT_TOPIC}
+      JAVA_TOOL_OPTIONS: ${AIRS_JAVA_TOOL_OPTIONS}
+      TZ: Asia/Seoul
+    ports:
+      - "8080:8080"
+
+volumes:
+  mysql-data:
+  influxdb-data:
+  mosquitto-data:
