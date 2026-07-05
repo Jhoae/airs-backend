@@ -60,7 +60,7 @@ public class InfluxDht22Writer {
                 .time(payload.getTimestamp(), WritePrecision.MS);
 
         if (payload.getCo2Ppm() != null) {
-            point.addField("co2_ppm", payload.getCo2Ppm());
+            point.addField("co2_ppm", payload.getCo2Ppm().doubleValue());
         }
 
         if (payload.getScd41Temperature() != null) {
