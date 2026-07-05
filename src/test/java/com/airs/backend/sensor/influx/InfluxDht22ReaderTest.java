@@ -84,9 +84,9 @@ class InfluxDht22ReaderTest {
         Instant timestamp = Instant.parse("2026-05-06T00:00:05Z");
 
         when(fluxTable.getRecords()).thenReturn(List.of(fluxRecord));
-        when(fluxRecord.getValueByKey("temperature")).thenReturn(26.5);
-        when(fluxRecord.getValueByKey("humidity")).thenReturn(50.3);
-        when(fluxRecord.getValueByKey("co2")).thenReturn(842.0);
+        when(fluxRecord.getValueByKey("temperature_c")).thenReturn(26.5);
+        when(fluxRecord.getValueByKey("humidity_pct")).thenReturn(50.3);
+        when(fluxRecord.getValueByKey("co2_ppm")).thenReturn(842.0);
         when(fluxRecord.getTime()).thenReturn(timestamp);
         when(queryApi.query(org.mockito.ArgumentMatchers.anyString(), eq("airs-org")))
                 .thenReturn(List.of(fluxTable));
@@ -105,7 +105,7 @@ class InfluxDht22ReaderTest {
         assertEquals(true, query.contains("from(bucket: \"airs\")"));
         assertEquals(true, query.contains("r._measurement == \"sensor_data\""));
         assertEquals(true, query.contains("r.node_id == \"node_01\""));
-        assertEquals(true, query.contains("r._field == \"temperature\" or r._field == \"humidity\" or r._field == \"co2\""));
+        assertEquals(true, query.contains("r._field == \"temperature_c\" or r._field == \"humidity_pct\" or r._field == \"co2_ppm\""));
     }
 
     @Test
@@ -129,7 +129,7 @@ class InfluxDht22ReaderTest {
         ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
         verify(queryApi).query(queryCaptor.capture(), eq("airs-org"));
         String query = queryCaptor.getValue();
-        assertEquals(true, query.contains("r._field == \"co2\""));
+        assertEquals(true, query.contains("r._field == \"co2_ppm\""));
         assertEquals(true, query.contains("aggregateWindow(every: 5m, fn: mean, createEmpty: false)"));
     }
 

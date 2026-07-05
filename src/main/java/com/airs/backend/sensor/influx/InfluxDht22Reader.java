@@ -197,7 +197,7 @@ public class InfluxDht22Reader {
                   |> range(start: time(v: "%s"), stop: time(v: "%s"))
                   |> filter(fn: (r) => r._measurement == "%s")
                   |> filter(fn: (r) => r.%s == "%s")
-                  |> filter(fn: (r) => r._field == "co2")
+                  |> filter(fn: (r) => r._field == "co2_ppm")
                   |> aggregateWindow(every: %s, fn: mean, createEmpty: false)
                   |> sort(columns: ["_time"])
                 """.formatted(
@@ -228,7 +228,7 @@ public class InfluxDht22Reader {
                   |> range(start: time(v: "%s"), stop: time(v: "%s"))
                   |> filter(fn: (r) => r._measurement == "%s")
                   |> filter(fn: (r) => r.%s == "%s")
-                  |> filter(fn: (r) => r._field == "temperature" or r._field == "humidity" or r._field == "co2")
+                  |> filter(fn: (r) => r._field == "temperature_c" or r._field == "humidity_pct" or r._field == "co2_ppm")
                   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
                   |> sort(columns: ["_time"])
                 """.formatted(
@@ -249,16 +249,16 @@ public class InfluxDht22Reader {
     }
 
     private Dht22MeasurementItem toMeasurementItem(FluxRecord record) {
-        Object temperatureValue = record.getValueByKey("temperature");
-        Object humidityValue = record.getValueByKey("humidity");
-        Object co2Value = record.getValueByKey("co2");
+        Object temperatureValue = record.getValueByKey("temperature_c");
+        Object humidityValue = record.getValueByKey("humidity_pct");
+        Object co2Value = record.getValueByKey("co2_ppm");
 
         if (!(temperatureValue instanceof Number temperatureNumber)) {
-            throw new IllegalStateException("temperature 필드를 Double로 변환할 수 없습니다.");
+            throw new IllegalStateException("temperature_c 필드를 Double로 변환할 수 없습니다.");
         }
 
         if (!(humidityValue instanceof Number humidityNumber)) {
-            throw new IllegalStateException("humidity 필드를 Double로 변환할 수 없습니다.");
+            throw new IllegalStateException("humidity_pct 필드를 Double로 변환할 수 없습니다.");
         }
 
         Double temperature = temperatureNumber.doubleValue();
@@ -295,7 +295,7 @@ public class InfluxDht22Reader {
             return null;
         }
         if (!(value instanceof Number number)) {
-            throw new IllegalStateException("co2 필드를 Integer로 변환할 수 없습니다.");
+            throw new IllegalStateException("co2_ppm 필드를 Integer로 변환할 수 없습니다.");
         }
         return (int) Math.round(number.doubleValue());
     }

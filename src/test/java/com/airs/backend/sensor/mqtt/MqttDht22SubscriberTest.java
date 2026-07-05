@@ -1,7 +1,6 @@
 package com.airs.backend.sensor.mqtt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -36,7 +35,7 @@ class MqttDht22SubscriberTest {
         MqttProperties mqttProperties = new MqttProperties();
         mqttProperties.setHost("localhost");
         mqttProperties.setPort(1883);
-        mqttProperties.setTopic("airs/node/+/dht22");
+        mqttProperties.setTopic("airs/node/+/telemetry");
 
         mqttDht22Subscriber = new MqttDht22Subscriber(
                 mqttProperties,
@@ -49,9 +48,9 @@ class MqttDht22SubscriberTest {
     void handleMessage_should_parse_payload_and_pass_it_to_service() throws Exception {
         String json = """
                 {
-                  "temperature": 26.5,
-                  "humidity": 50.3,
-                  "co2": 842,
+                  "temperature_c": 26.5,
+                  "humidity_pct": 50.3,
+                  "co2_ppm": 842,
                   "timestamp": "2026-04-10T10:00:00Z"
                 }
                 """;
@@ -60,7 +59,7 @@ class MqttDht22SubscriberTest {
         ReflectionTestUtils.invokeMethod(
                 mqttDht22Subscriber,
                 "handleMessage",
-                "airs/node/node_01/dht22",
+                "airs/node/node_01/telemetry",
                 message
         );
 
@@ -78,8 +77,8 @@ class MqttDht22SubscriberTest {
     void handleMessage_should_ignore_unknown_fields() throws Exception {
         String json = """
                 {
-                  "temperature": 26.5,
-                  "humidity": 50.3,
+                  "temperature_c": 26.5,
+                  "humidity_pct": 50.3,
                   "co2_ppm": 956,
                   "abc": "ignored"
                 }
@@ -89,7 +88,7 @@ class MqttDht22SubscriberTest {
         ReflectionTestUtils.invokeMethod(
                 mqttDht22Subscriber,
                 "handleMessage",
-                "airs/node/node_01/dht22",
+                "airs/node/node_01/telemetry",
                 message
         );
 
@@ -103,11 +102,19 @@ class MqttDht22SubscriberTest {
     }
 
     @Test
-    void handleMessage_should_accept_current_broker_payload_without_co2() throws Exception {
+    void handleMessage_should_accept_telemetry_payload_with_co2_ppm() throws Exception {
         String json = """
                 {
-                  "temperature": 21.1,
-                  "humidity": 63.1
+                  "node_id": "node_01",
+                  "temperature_c": 21.1,
+                  "humidity_pct": 63.1,
+                  "co2_ppm": 1900,
+                  "scd41_temperature_c": 20.6,
+                  "scd41_humidity_pct": 61.9,
+                  "sensor_status": {
+                    "dht22": "OK",
+                    "scd41": "OK"
+                  }
                 }
                 """;
         MqttMessage message = new MqttMessage(json.getBytes(StandardCharsets.UTF_8));
@@ -115,7 +122,7 @@ class MqttDht22SubscriberTest {
         ReflectionTestUtils.invokeMethod(
                 mqttDht22Subscriber,
                 "handleMessage",
-                "airs/node/node_01/dht22",
+                "airs/node/node_01/telemetry",
                 message
         );
 
@@ -125,7 +132,9 @@ class MqttDht22SubscriberTest {
         Dht22Payload payload = payloadCaptor.getValue();
         assertEquals(21.1, payload.getTemperature());
         assertEquals(63.1, payload.getHumidity());
-        assertNull(payload.getCo2Ppm());
+        assertEquals(1900, payload.getCo2Ppm());
+        assertEquals(20.6, payload.getScd41Temperature());
+        assertEquals(61.9, payload.getScd41Humidity());
     }
 
     @Test

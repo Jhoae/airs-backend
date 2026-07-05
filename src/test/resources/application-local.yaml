@@ -26,5 +26,5 @@ influx:
   token: dummy-test-influx-token
   org: test-org
   bucket: test-bucket
-  measurement: dht22
-  node-id-tag: nodeId
+  measurement: sensor_data
+  node-id-tag: node_id

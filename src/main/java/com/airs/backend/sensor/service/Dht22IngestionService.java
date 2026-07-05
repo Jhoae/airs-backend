@@ -26,7 +26,7 @@ public class Dht22IngestionService {
         }
 
         if (payload == null) {
-            throw new IllegalArgumentException("DHT22 payload가 없습니다.");
+            throw new IllegalArgumentException("telemetry payload가 없습니다.");
         }
 
         if (payload.getTemperature() == null) {

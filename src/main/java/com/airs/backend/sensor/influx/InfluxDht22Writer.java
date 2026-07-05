@@ -50,17 +50,25 @@ public class InfluxDht22Writer {
         }
 
         if (payload == null) {
-            throw new IllegalArgumentException("DHT22 payload가 없습니다.");
+            throw new IllegalArgumentException("telemetry payload가 없습니다.");
         }
 
         Point point = Point.measurement(influxProperties.getMeasurement())
                 .addTag(influxProperties.getNodeIdTag(), nodeId)
-                .addField("temperature", payload.getTemperature())
-                .addField("humidity", payload.getHumidity())
+                .addField("temperature_c", payload.getTemperature())
+                .addField("humidity_pct", payload.getHumidity())
                 .time(payload.getTimestamp(), WritePrecision.MS);
 
         if (payload.getCo2Ppm() != null) {
-            point.addField("co2", payload.getCo2Ppm());
+            point.addField("co2_ppm", payload.getCo2Ppm());
+        }
+
+        if (payload.getScd41Temperature() != null) {
+            point.addField("scd41_temperature_c", payload.getScd41Temperature());
+        }
+
+        if (payload.getScd41Humidity() != null) {
+            point.addField("scd41_humidity_pct", payload.getScd41Humidity());
         }
 
         writeApi.writePoint(point);

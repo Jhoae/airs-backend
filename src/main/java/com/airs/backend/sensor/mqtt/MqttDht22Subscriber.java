@@ -67,18 +67,18 @@ public class MqttDht22Subscriber {
         String nodeId = extractNodeId(topic);
 
         Dht22Payload payload = objectMapper.readValue(payloadJson, Dht22Payload.class);
-            dht22IngestionService.ingest(nodeId, payload);
+        dht22IngestionService.ingest(nodeId, payload);
     }
 
     private String extractNodeId(String topic) {
-        // EX: airs/node/node_01/dht22
+        // EX: airs/node/node_01/telemetry
         String[] parts = topic.split("/");
 
         if (parts.length != 4) {
             throw new IllegalArgumentException("topic 형식이 올바르지 않습니다: " + topic);
         }
 
-        if (!"airs".equals(parts[0]) || !"node".equals(parts[1]) || !"dht22".equals(parts[3])) {
+        if (!"airs".equals(parts[0]) || !"node".equals(parts[1]) || !"telemetry".equals(parts[3])) {
             throw new IllegalArgumentException("예상한 topic 규칙이 아닙니다: " + topic);
         }
 
