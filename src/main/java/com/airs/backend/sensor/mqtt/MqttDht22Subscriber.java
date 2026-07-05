@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -40,7 +41,8 @@ public class MqttDht22Subscriber {
 
         mqttClient = new MqttClient(
                 "tcp://" + mqttProperties.getHost() + ":" + mqttProperties.getPort(),
-                MqttClient.generateClientId()
+                MqttClient.generateClientId(),
+                new MemoryPersistence()
         );
 
         MqttConnectOptions connectOptions = new MqttConnectOptions();

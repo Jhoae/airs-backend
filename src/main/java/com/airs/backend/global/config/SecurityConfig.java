@@ -5,6 +5,7 @@ import com.airs.backend.global.jwt.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -36,6 +37,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable()) // CSRF 보호를 끄고 JWT 기반 인증
                 .formLogin(formLogin -> formLogin.disable()) // 우리가 구현한 로그인 로직 사용
                 .httpBasic(httpBasic -> httpBasic.disable()) // 우리는 로그인 후 발급된 JWT를 쓰는 방식
