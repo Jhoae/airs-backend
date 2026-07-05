@@ -12,11 +12,6 @@ spring:
 mqtt:
   enabled: false
 
-airs:
-  seed:
-    sogang-root-admin:
-      enabled: false
-
 jwt:
   secret-key: test-local-jwt-secret-key-that-is-long-enough-12345
   access-token-expiration-minutes: 30
