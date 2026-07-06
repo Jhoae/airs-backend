@@ -150,6 +150,36 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /airs/admin/campuses:
+    post:
+      tags:
+        - Campus
+      summary: 관리자용 캠퍼스 등록
+      description: 승인된 ADMIN 또는 ROOT_ADMIN만 새 캠퍼스를 추가할 수 있습니다. USER는 호출할 수 없습니다.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateCampusRequest'
+      responses:
+        '201':
+          description: 캠퍼스 등록 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampusResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
   /airs/admin/campuses/{campusId}/buildings:
     get:
       tags:
@@ -175,6 +205,38 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+        - Campus
+      summary: 관리자용 건물 등록
+      description: 승인된 ADMIN 또는 ROOT_ADMIN이 자신의 캠퍼스에 건물을 추가합니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CampusId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateBuildingRequest'
+      responses:
+        '201':
+          description: 건물 등록 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBuildingResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /airs/admin/buildings/{buildingId}/spaces:
     get:
@@ -201,6 +263,38 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+        - Campus
+      summary: 관리자용 공간 등록
+      description: 노드 등록 화면의 새 공간 추가 버튼에서 사용합니다. 승인된 ADMIN 또는 ROOT_ADMIN만 자신의 캠퍼스 건물에 공간을 추가할 수 있습니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/BuildingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateSpaceRequest'
+      responses:
+        '201':
+          description: 공간 등록 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSpaceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /airs/admin/nodes:
     get:
@@ -289,9 +383,23 @@ paths:
         - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/NodeId'
+        - name: period
+          in: query
+          required: false
+          description: 장기 CO2 그래프 조회 기간입니다. period가 있으면 hours/window 대신 기간별 기본 window를 사용합니다.
+          schema:
+            type: string
+            enum:
+              - 1d
+              - 5d
+              - 1mo
+              - 6mo
+              - 1y
+            example: 5d
         - name: hours
           in: query
           required: false
+          description: period가 없을 때 사용하는 최근 조회 시간입니다.
           schema:
             type: integer
             minimum: 1
@@ -690,6 +798,37 @@ components:
         name:
           type: string
           example: 서강대학교
+    AdminCreateCampusRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          maxLength: 150
+          example: 서강대학교
+        latitude:
+          type: number
+          nullable: true
+          example: null
+        longitude:
+          type: number
+          nullable: true
+          example: null
+        radiusMeter:
+          type: integer
+          nullable: true
+          minimum: 1
+          example: 500
+    AdminCreateBuildingRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          maxLength: 150
+          example: 다산관
     AdminBuildingResponse:
       type: object
       properties:
@@ -700,6 +839,35 @@ components:
         name:
           type: string
           example: 김대건관
+    AdminCreateSpaceRequest:
+      type: object
+      required:
+        - code
+        - name
+      properties:
+        code:
+          type: string
+          maxLength: 40
+          example: K302
+        name:
+          type: string
+          maxLength: 150
+          example: 302호
+        floorLabel:
+          type: string
+          nullable: true
+          maxLength: 50
+          example: 3층
+        spaceType:
+          $ref: '#/components/schemas/SpaceType'
+        latitude:
+          type: number
+          nullable: true
+          example: null
+        longitude:
+          type: number
+          nullable: true
+          example: null
     AdminSpaceResponse:
       type: object
       properties:
@@ -986,6 +1154,17 @@ components:
         nodeId:
           type: string
           example: node_01
+        period:
+          type: string
+          nullable: true
+          description: period 기반 조회일 때 선택된 기간입니다. 기존 hours/window 조회이면 null입니다.
+          enum:
+            - 1d
+            - 5d
+            - 1mo
+            - 6mo
+            - 1y
+          example: 5d
         from:
           type: string
           format: date-time

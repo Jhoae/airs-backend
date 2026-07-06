@@ -2,6 +2,7 @@ package com.airs.backend.node.service;
 
 import com.airs.backend.admin.service.AdminAccessService;
 import com.airs.backend.node.dto.trend.AdminNodeCo2TrendPointResponse;
+import com.airs.backend.node.dto.trend.AdminNodeCo2TrendPeriod;
 import com.airs.backend.node.dto.trend.AdminNodeCo2TrendResponse;
 import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.NodeInstallationRepository;
@@ -34,19 +35,20 @@ public class AdminNodeCo2TrendService {
     public AdminNodeCo2TrendResponse getCo2Trend(
             Long userId,
             String nodeId,
+            String period,
             Integer hours,
             String window
     ) {
-        int resolvedHours = resolveHours(hours);
-        String resolvedWindow = resolveWindow(window);
         User user = adminAccessService.getApprovedAdmin(userId);
         NodeInstallation installation = nodeInstallationRepository.findByNode_IdAndActiveTrue(nodeId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "노드를 찾을 수 없습니다."));
 
         validateSameCampus(user, installation);
 
+        AdminNodeCo2TrendPeriod resolvedPeriod = AdminNodeCo2TrendPeriod.from(period);
         Instant to = Instant.now().truncatedTo(ChronoUnit.SECONDS);
-        Instant from = to.minus(resolvedHours, ChronoUnit.HOURS);
+        Instant from = resolveFrom(to, resolvedPeriod, hours);
+        String resolvedWindow = resolveWindow(resolvedPeriod, window);
         List<AdminNodeCo2TrendPointResponse> points = influxDht22Reader
                 .readCo2Trend(nodeId, from, to, resolvedWindow)
                 .stream()
@@ -55,11 +57,19 @@ public class AdminNodeCo2TrendService {
 
         return new AdminNodeCo2TrendResponse(
                 nodeId,
+                resolvedPeriod == null ? null : resolvedPeriod.getValue(),
                 from,
                 to,
                 resolvedWindow,
                 points
         );
+    }
+
+    private Instant resolveFrom(Instant to, AdminNodeCo2TrendPeriod period, Integer hours) {
+        if (period != null) {
+            return to.minus(period.getDays(), ChronoUnit.DAYS);
+        }
+        return to.minus(resolveHours(hours), ChronoUnit.HOURS);
     }
 
     private int resolveHours(Integer hours) {
@@ -72,7 +82,10 @@ public class AdminNodeCo2TrendService {
         return hours;
     }
 
-    private String resolveWindow(String window) {
+    private String resolveWindow(AdminNodeCo2TrendPeriod period, String window) {
+        if (period != null) {
+            return period.getWindow();
+        }
         if (window == null || window.isBlank()) {
             return DEFAULT_WINDOW;
         }

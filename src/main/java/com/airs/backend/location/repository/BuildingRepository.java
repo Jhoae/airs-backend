@@ -13,4 +13,6 @@ public interface BuildingRepository extends JpaRepository<Building, Long> {
     List<Building> findAllByCampus_IdAndDeletedAtIsNullOrderByNameAsc(Long campusId);
 
     Optional<Building> findByIdAndDeletedAtIsNull(Long buildingId);
+
+    boolean existsByCampus_IdAndNameAndDeletedAtIsNull(Long campusId, String name);
 }

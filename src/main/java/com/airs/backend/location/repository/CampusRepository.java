@@ -10,7 +10,11 @@ public interface CampusRepository extends JpaRepository<Campus, Long> {
 
     boolean existsByName(String name);
 
+    boolean existsByNameAndDeletedAtIsNull(String name);
+
     Optional<Campus> findByName(String name);
+
+    Optional<Campus> findByIdAndDeletedAtIsNull(Long campusId);
 
     List<Campus> findAllByDeletedAtIsNullOrderByNameAsc();
 }

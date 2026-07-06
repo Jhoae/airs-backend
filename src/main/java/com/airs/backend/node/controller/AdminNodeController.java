@@ -58,12 +58,14 @@ public class AdminNodeController {
     public ResponseEntity<AdminNodeCo2TrendResponse> getCo2Trend(
             @AuthenticationPrincipal CurrentUserPrincipal currentUser,
             @PathVariable String nodeId,
+            @RequestParam(required = false) String period,
             @RequestParam(required = false) Integer hours,
             @RequestParam(required = false) String window
     ) {
         AdminNodeCo2TrendResponse response = adminNodeCo2TrendService.getCo2Trend(
                 currentUser.getUserId(),
                 nodeId,
+                period,
                 hours,
                 window
         );

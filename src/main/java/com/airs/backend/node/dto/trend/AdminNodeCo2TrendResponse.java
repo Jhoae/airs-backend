@@ -11,6 +11,7 @@ import java.util.List;
 public class AdminNodeCo2TrendResponse {
 
     private String nodeId;
+    private String period;
     private Instant from;
     private Instant to;
     private String window;
