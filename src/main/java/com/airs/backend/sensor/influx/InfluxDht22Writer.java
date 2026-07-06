@@ -71,6 +71,14 @@ public class InfluxDht22Writer {
             point.addField("scd41_humidity_pct", payload.getScd41Humidity());
         }
 
+        if (payload.getDht22Status() != null && !payload.getDht22Status().isBlank()) {
+            point.addField("dht22_status", payload.getDht22Status());
+        }
+
+        if (payload.getScd41Status() != null && !payload.getScd41Status().isBlank()) {
+            point.addField("scd41_status", payload.getScd41Status());
+        }
+
         writeApi.writePoint(point);
         log.debug("InfluxDB에 센서 데이터를 저장했습니다. nodeId={}", nodeId);
     }

@@ -42,18 +42,29 @@ public class Dht22SnapshotUpdateService {
         }
 
         LocalDateTime receivedAt = LocalDateTime.ofInstant(payload.getTimestamp(), ZoneId.systemDefault());
-        updateNodeStatus(installation.getNode(), receivedAt);
+        updateNodeStatus(installation.getNode(), payload, receivedAt);
         updateSpaceStatus(installation, payload, receivedAt);
     }
 
-    private void updateNodeStatus(AirsNode node, LocalDateTime receivedAt) {
+    private void updateNodeStatus(AirsNode node, Dht22Payload payload, LocalDateTime receivedAt) {
+        String dht22Status = normalizeStatus(payload.getDht22Status());
+        String scd41Status = normalizeStatus(payload.getScd41Status());
+        SensorStatus sensorStatus = resolveSensorStatus(dht22Status, scd41Status);
+
         nodeStatusSnapshotRepository.findByNode_Id(node.getId())
                 .ifPresentOrElse(
-                        nodeStatus -> nodeStatus.markSensorReceived(receivedAt),
+                        nodeStatus -> nodeStatus.markSensorReceived(
+                                receivedAt,
+                                sensorStatus,
+                                dht22Status,
+                                scd41Status
+                        ),
                         () -> nodeStatusSnapshotRepository.save(new NodeStatusSnapshot(
                                 node,
                                 ConnectionStatus.ONLINE,
-                                SensorStatus.NORMAL,
+                                sensorStatus,
+                                dht22Status,
+                                scd41Status,
                                 null,
                                 null,
                                 receivedAt,
@@ -95,5 +106,28 @@ public class Dht22SnapshotUpdateService {
 
     private BigDecimal toScaledBigDecimal(Double value) {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private SensorStatus resolveSensorStatus(String dht22Status, String scd41Status) {
+        if (isOkOrMissing(dht22Status) && isOkOrMissing(scd41Status)) {
+            return SensorStatus.NORMAL;
+        }
+        return SensorStatus.ABNORMAL;
+    }
+
+    private boolean isOkOrMissing(String status) {
+        return status == null || "OK".equalsIgnoreCase(status);
+    }
+
+    private String normalizeStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return null;
+        }
+
+        String trimmed = status.trim();
+        if (trimmed.length() <= 30) {
+            return trimmed;
+        }
+        return trimmed.substring(0, 30);
     }
 }

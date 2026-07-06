@@ -42,6 +42,12 @@ public class NodeStatusSnapshot {
     @Column(name = "sensor_status", nullable = false, length = 30)
     private SensorStatus sensorStatus;
 
+    @Column(name = "dht22_status", length = 30)
+    private String dht22Status;
+
+    @Column(name = "scd41_status", length = 30)
+    private String scd41Status;
+
     @Column(name = "wifi_rssi")
     private Integer wifiRssi;
 
@@ -75,9 +81,27 @@ public class NodeStatusSnapshot {
         this.lastSensorReceivedAt = lastSensorReceivedAt;
     }
 
+    public NodeStatusSnapshot(
+            AirsNode node,
+            ConnectionStatus connectionStatus,
+            SensorStatus sensorStatus,
+            String dht22Status,
+            String scd41Status,
+            Integer wifiRssi,
+            Boolean humanDetected,
+            LocalDateTime lastSeenAt,
+            LocalDateTime lastSensorReceivedAt
+    ) {
+        this(node, connectionStatus, sensorStatus, wifiRssi, humanDetected, lastSeenAt, lastSensorReceivedAt);
+        this.dht22Status = dht22Status;
+        this.scd41Status = scd41Status;
+    }
+
     public void resetAfterRegistration(Integer wifiRssi) {
         this.connectionStatus = ConnectionStatus.UNKNOWN;
         this.sensorStatus = SensorStatus.NO_DATA;
+        this.dht22Status = null;
+        this.scd41Status = null;
         this.wifiRssi = wifiRssi;
         this.humanDetected = null;
         this.lastSeenAt = null;
@@ -90,8 +114,19 @@ public class NodeStatusSnapshot {
     }
 
     public void markSensorReceived(LocalDateTime receivedAt) {
+        markSensorReceived(receivedAt, SensorStatus.NORMAL, null, null);
+    }
+
+    public void markSensorReceived(
+            LocalDateTime receivedAt,
+            SensorStatus sensorStatus,
+            String dht22Status,
+            String scd41Status
+    ) {
         this.connectionStatus = ConnectionStatus.ONLINE;
-        this.sensorStatus = SensorStatus.NORMAL;
+        this.sensorStatus = sensorStatus;
+        this.dht22Status = dht22Status;
+        this.scd41Status = scd41Status;
         this.lastSeenAt = receivedAt;
         this.lastSensorReceivedAt = receivedAt;
     }

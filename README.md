@@ -48,7 +48,7 @@ Docker Compose는 다음 서비스를 함께 실행합니다.
 - InfluxDB
 - MQTT Broker
 
-Docker Compose 실행 전 `.env` 값을 실행 환경에 맞게 준비해야 합니다.
+따라서 Docker Compose 실행 전 `.env` 값을 실행 환경에 맞게 준비해야 합니다.
 
 필수로 확인할 값:
 
@@ -70,17 +70,7 @@ Docker Compose 실행 전 `.env` 값을 실행 환경에 맞게 준비해야 합
 - `AIRS_JAVA_TOOL_OPTIONS`
 
 예시 `.env`는 `.env.example`을 참고합니다.
-
-```sh
-cp .env.example .env
-```
-
-InfluxDB token 주의:
-
-- `docker-compose.yml`은 InfluxDB 초기 생성 token과 backend `INFLUX_TOKEN`을 같은 `.env` 변수인 `AIRS_INFLUX_TOKEN`에서 읽습니다.
-- 실제 값은 `.env`에만 작성하고, `.env`는 GitHub에 올리지 않습니다.
-- 서로 다른 값이 섞이면 Spring Boot는 MQTT 메시지를 받아도 InfluxDB 저장 시 `401 unauthorized`가 발생할 수 있습니다.
-- InfluxDB volume이 이미 생성된 뒤 `INFLUX_TOKEN`을 바꾸면 기존 InfluxDB에는 새 token이 자동 반영되지 않습니다. 이 경우 기존 token을 유지하거나, 데이터를 백업한 뒤 volume 초기화가 필요합니다.
+실제 값은 `.env`에만 작성하고, `.env`는 GitHub에 올리지 않습니다.
 
 
 ### Docker / Compose 실행

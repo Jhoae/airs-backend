@@ -121,10 +121,10 @@ public class AdminNodeListService {
 
     private int connectionPriority(NodeListRow row) {
         return switch (row.connectionStatus()) {
-            case OFFLINE -> 0;
+            case ONLINE -> 0;
             case WEAK -> 1;
             case UNKNOWN -> 2;
-            case ONLINE -> 3;
+            case OFFLINE -> 3;
         };
     }
 

@@ -112,6 +112,8 @@ CREATE TABLE node_status_snapshots (
   node_id VARCHAR(80) NOT NULL,
   connection_status VARCHAR(30) NOT NULL,
   sensor_status VARCHAR(30) NOT NULL,
+  dht22_status VARCHAR(30) NULL,
+  scd41_status VARCHAR(30) NULL,
   wifi_rssi INT NULL,
   human_detected BOOLEAN NULL,
   last_seen_at DATETIME NULL,

@@ -135,6 +135,8 @@ class MqttDht22SubscriberTest {
         assertEquals(1900, payload.getCo2Ppm());
         assertEquals(20.6, payload.getScd41Temperature());
         assertEquals(61.9, payload.getScd41Humidity());
+        assertEquals("OK", payload.getDht22Status());
+        assertEquals("OK", payload.getScd41Status());
     }
 
     @Test
