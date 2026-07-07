@@ -14,6 +14,8 @@ tags:
     description: ROOT_ADMIN의 관리자 승인 API
   - name: Admin Nodes
     description: 관리자 앱 노드 목록, 상세, 등록, 삭제 API
+  - name: Admin Analytics
+    description: 관리자 앱 분석 요약 및 환기/CO2 분석 API
   - name: Sensor
     description: 인증 사용자가 조회하는 센서 요약 API
   - name: Internal Sensor
@@ -428,6 +430,35 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /airs/admin/analytics/co2:
+    get:
+      tags:
+        - Admin Analytics
+      summary: 관리자 환기/CO2 분석 조회
+      description: 환기/CO2 분석 화면의 CO2 현황 탭을 위한 API입니다. 현재 공간별 상태는 MySQL snapshot에서, 시간대별 평균 추이는 InfluxDB co2_ppm에서 조회합니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 조회 기준 날짜입니다. 생략하면 서버 기준 오늘 날짜를 사용합니다.
+          schema:
+            type: string
+            format: date
+            example: '2026-07-07'
+      responses:
+        '200':
+          description: 환기/CO2 분석 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCo2AnalyticsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /airs/admin/nodes/installations:
     post:
@@ -1187,6 +1218,138 @@ components:
         co2Ppm:
           type: integer
           nullable: true
+    AdminCo2AnalyticsResponse:
+      type: object
+      properties:
+        campusId:
+          type: integer
+          format: int64
+        campusName:
+          type: string
+          example: 서강대학교
+        date:
+          type: string
+          format: date
+          example: '2026-07-07'
+        totalSpaceCount:
+          type: integer
+          example: 25
+        averageCo2Ppm:
+          type: integer
+          nullable: true
+          example: 842
+        ventilationSummary:
+          $ref: '#/components/schemas/AdminCo2VentilationSummaryResponse'
+        distribution:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCo2DistributionItemResponse'
+        todayTrend:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCo2TrendPointResponse'
+        yesterdayTrend:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCo2TrendPointResponse'
+        topSpaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCo2TopSpaceResponse'
+    AdminCo2VentilationSummaryResponse:
+      type: object
+      properties:
+        goodCount:
+          type: integer
+          example: 22
+        goodPercent:
+          type: integer
+          example: 61
+        recommendedCount:
+          type: integer
+          example: 9
+        recommendedPercent:
+          type: integer
+          example: 25
+        neededCount:
+          type: integer
+          example: 4
+        neededPercent:
+          type: integer
+          example: 11
+        noDataCount:
+          type: integer
+          example: 1
+        noDataPercent:
+          type: integer
+          example: 3
+    AdminCo2DistributionItemResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - GOOD
+            - NORMAL
+            - WARNING
+            - BAD
+            - NO_DATA
+          example: NORMAL
+        label:
+          type: string
+          example: 보통
+        rangeLabel:
+          type: string
+          example: 801~1,000 ppm
+        count:
+          type: integer
+          example: 15
+        percent:
+          type: integer
+          example: 42
+    AdminCo2TrendPointResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-07-07T05:00:00Z'
+        co2Ppm:
+          type: integer
+          nullable: true
+          example: 842
+    AdminCo2TopSpaceResponse:
+      type: object
+      properties:
+        rank:
+          type: integer
+          example: 1
+        nodeId:
+          type: string
+          nullable: true
+          example: node_01
+        spaceId:
+          type: integer
+          format: int64
+        spaceCode:
+          type: string
+          example: R904
+        spaceName:
+          type: string
+          example: 904호
+        buildingName:
+          type: string
+          example: 로욜라도서관
+        co2Ppm:
+          type: integer
+          nullable: true
+          example: 1582
+        co2Status:
+          type: string
+          example: BAD
+        co2StatusLabel:
+          type: string
+          example: 나쁨
 
     DailyDht22SummaryResponse:
       type: object

@@ -134,6 +134,38 @@ class InfluxDht22ReaderTest {
     }
 
     @Test
+    void readAverageCo2Trend_should_query_average_trend_for_multiple_nodes() {
+        Instant from = Instant.parse("2026-05-06T00:00:00Z");
+        Instant to = Instant.parse("2026-05-06T23:59:59Z");
+        Instant timestamp = Instant.parse("2026-05-06T01:00:00Z");
+
+        when(fluxTable.getRecords()).thenReturn(List.of(fluxRecord));
+        when(fluxRecord.getValue()).thenReturn(901.6);
+        when(fluxRecord.getTime()).thenReturn(timestamp);
+        when(queryApi.query(org.mockito.ArgumentMatchers.anyString(), eq("airs-org")))
+                .thenReturn(List.of(fluxTable));
+
+        List<Co2TrendItem> trend = influxDht22Reader.readAverageCo2Trend(
+                List.of("node_01", "node_02"),
+                from,
+                to,
+                "1h"
+        );
+
+        assertEquals(1, trend.size());
+        assertEquals(timestamp, trend.get(0).getTimestamp());
+        assertEquals(902, trend.get(0).getCo2Ppm());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi).query(queryCaptor.capture(), eq("airs-org"));
+        String query = queryCaptor.getValue();
+        assertEquals(true, query.contains("contains(value: r.node_id, set: [\"node_01\", \"node_02\"])"));
+        assertEquals(true, query.contains("aggregateWindow(every: 1h, fn: mean, createEmpty: false)"));
+        assertEquals(true, query.contains("group(columns: [\"_time\"])"));
+        assertEquals(true, query.contains("mean(column: \"_value\")"));
+    }
+
+    @Test
     void readRange_should_fail_when_from_is_after_to() {
         Instant from = Instant.parse("2026-05-06T01:00:00Z");
         Instant to = Instant.parse("2026-05-06T00:00:00Z");

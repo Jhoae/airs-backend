@@ -9,6 +9,8 @@ public interface SpaceRepository extends JpaRepository<Space, Long> {
 
     List<Space> findAllByCampus_Id(Long campusId);
 
+    List<Space> findAllByCampus_IdAndDeletedAtIsNull(Long campusId);
+
     List<Space> findAllByBuilding_IdAndDeletedAtIsNullOrderByCodeAsc(Long buildingId);
 
     boolean existsByCampus_IdAndCode(Long campusId, String code);

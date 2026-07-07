@@ -218,6 +218,69 @@ public class InfluxDht22Reader {
                 .toList();
     }
 
+    public List<Co2TrendItem> readAverageCo2Trend(List<String> nodeIds, Instant from, Instant to, String window) {
+        if (nodeIds == null || nodeIds.isEmpty()) {
+            throw new IllegalArgumentException("nodeIds가 비어 있습니다.");
+        }
+
+        if (nodeIds.stream().anyMatch(nodeId -> nodeId == null || nodeId.isBlank())) {
+            throw new IllegalArgumentException("nodeIds에 비어 있는 nodeId가 포함되어 있습니다.");
+        }
+
+        if (from == null) {
+            throw new IllegalArgumentException("from이 비어 있습니다.");
+        }
+
+        if (to == null) {
+            throw new IllegalArgumentException("to가 비어 있습니다.");
+        }
+
+        if (from.isAfter(to)) {
+            throw new IllegalArgumentException("from은 to보다 이후일 수 없습니다.");
+        }
+
+        if (window == null || !window.matches("\\d+[smhd]")) {
+            throw new IllegalArgumentException("window 형식이 올바르지 않습니다.");
+        }
+
+        if (queryApi == null) {
+            throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
+        }
+
+        String nodeIdSet = nodeIds.stream()
+                .distinct()
+                .map(nodeId -> "\"" + escapeFluxString(nodeId) + "\"")
+                .collect(java.util.stream.Collectors.joining(", "));
+
+        String query = """
+                from(bucket: "%s")
+                  |> range(start: time(v: "%s"), stop: time(v: "%s"))
+                  |> filter(fn: (r) => r._measurement == "%s")
+                  |> filter(fn: (r) => contains(value: r.%s, set: [%s]))
+                  |> filter(fn: (r) => r._field == "co2_ppm")
+                  |> aggregateWindow(every: %s, fn: mean, createEmpty: false)
+                  |> group(columns: ["_time"])
+                  |> mean(column: "_value")
+                  |> group()
+                  |> sort(columns: ["_time"])
+                """.formatted(
+                influxProperties.getBucket(),
+                from,
+                to,
+                influxProperties.getMeasurement(),
+                influxProperties.getNodeIdTag(),
+                nodeIdSet,
+                window
+        );
+
+        List<FluxTable> tables = queryApi.query(query, influxProperties.getOrg());
+
+        return tables.stream()
+                .flatMap(table -> table.getRecords().stream())
+                .map(record -> toCo2TrendItem(record))
+                .toList();
+    }
+
     private List<Dht22MeasurementItem> queryMeasurements(String nodeId, Instant from, Instant to) {
         if (queryApi == null) {
             throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
@@ -298,6 +361,12 @@ public class InfluxDht22Reader {
             throw new IllegalStateException("co2_ppm 필드를 Integer로 변환할 수 없습니다.");
         }
         return (int) Math.round(number.doubleValue());
+    }
+
+    private String escapeFluxString(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
     }
 
     @PreDestroy
