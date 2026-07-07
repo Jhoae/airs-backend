@@ -29,8 +29,10 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -212,12 +214,12 @@ public class AdminAnalyticsOverviewService {
             Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId
     ) {
         return installations.stream()
-                .flatMap(installation -> List.of(
+                .flatMap(installation -> Stream.of(
                         buildCo2Insight(installation, spaceStatusBySpaceId),
                         buildOfflineInsight(installation, nodeStatusByNodeId),
                         buildWifiInsight(installation, nodeStatusByNodeId)
-                ).stream())
-                .filter(candidate -> candidate != null)
+                ))
+                .filter(Objects::nonNull)
                 .sorted(Comparator
                         .comparingInt(InsightCandidate::priority)
                         .thenComparing(InsightCandidate::score, Comparator.reverseOrder()))
