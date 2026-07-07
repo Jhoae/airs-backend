@@ -10,7 +10,10 @@ import com.influxdb.client.WriteApiBlocking;
 import com.influxdb.client.domain.WritePrecision;
 import com.influxdb.client.write.Point;
 import com.airs.backend.sensor.config.InfluxProperties;
+import com.airs.backend.sensor.config.OccupancyProperties;
 import com.airs.backend.sensor.dto.Dht22Payload;
+import com.airs.backend.sensor.service.OccupancyFusionResult;
+import com.airs.backend.sensor.service.OccupancyFusionService;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -23,6 +26,8 @@ public class InfluxDht22Writer {
     private static final Logger log = LoggerFactory.getLogger(InfluxDht22Writer.class);
 
     private final InfluxProperties influxProperties;
+    private final OccupancyProperties occupancyProperties;
+    private final OccupancyFusionService occupancyFusionService;
     private WriteApiBlocking writeApi;
     private InfluxDBClient influxDBClient;
 
@@ -79,8 +84,40 @@ public class InfluxDht22Writer {
             point.addField("scd41_status", payload.getScd41Status());
         }
 
+        if (occupancyProperties.isInfluxWriteEnabled()) {
+            addOccupancyFields(point, nodeId, payload);
+        }
+
         writeApi.writePoint(point);
         log.debug("InfluxDB에 센서 데이터를 저장했습니다. nodeId={}", nodeId);
+    }
+
+    private void addOccupancyFields(Point point, String nodeId, Dht22Payload payload) {
+        OccupancyFusionResult occupancy = occupancyFusionService.resolve(nodeId, payload);
+
+        if (payload.getPirDetected() != null) {
+            point.addField("pir_detected", payload.getPirDetected());
+        }
+
+        if (payload.getMmwaveDetected() != null) {
+            point.addField("mmwave_detected", payload.getMmwaveDetected());
+        }
+
+        if (payload.getWifiSignalDbm() != null) {
+            point.addField("wifi_signal_dbm", payload.getWifiSignalDbm());
+        }
+
+        if (occupancy.sourcePresent()) {
+            point.addField("occupancy_state", occupancy.state().name());
+        }
+
+        if (occupancy.occupancyPresent() != null) {
+            point.addField("occupancy_present", occupancy.occupancyPresent());
+        }
+
+        if (occupancy.minutesSinceMotion() != null) {
+            point.addField("minutes_since_motion", occupancy.minutesSinceMotion());
+        }
     }
 
     private void validateInfluxProperties() {

@@ -30,6 +30,7 @@ public class Dht22SnapshotUpdateService {
     private final NodeInstallationRepository nodeInstallationRepository;
     private final NodeStatusSnapshotRepository nodeStatusSnapshotRepository;
     private final SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
+    private final OccupancyFusionService occupancyFusionService;
 
     @Transactional
     public void updateLatestSnapshot(String nodeId, Dht22Payload payload) {
@@ -42,11 +43,17 @@ public class Dht22SnapshotUpdateService {
         }
 
         LocalDateTime receivedAt = LocalDateTime.ofInstant(payload.getTimestamp(), ZoneId.systemDefault());
-        updateNodeStatus(installation.getNode(), payload, receivedAt);
-        updateSpaceStatus(installation, payload, receivedAt);
+        OccupancyFusionResult occupancy = occupancyFusionService.resolve(nodeId, payload);
+        updateNodeStatus(installation.getNode(), payload, occupancy, receivedAt);
+        updateSpaceStatus(installation, payload, occupancy, receivedAt);
     }
 
-    private void updateNodeStatus(AirsNode node, Dht22Payload payload, LocalDateTime receivedAt) {
+    private void updateNodeStatus(
+            AirsNode node,
+            Dht22Payload payload,
+            OccupancyFusionResult occupancy,
+            LocalDateTime receivedAt
+    ) {
         String dht22Status = normalizeStatus(payload.getDht22Status());
         String scd41Status = normalizeStatus(payload.getScd41Status());
         SensorStatus sensorStatus = resolveSensorStatus(dht22Status, scd41Status);
@@ -57,7 +64,9 @@ public class Dht22SnapshotUpdateService {
                                 receivedAt,
                                 sensorStatus,
                                 dht22Status,
-                                scd41Status
+                                scd41Status,
+                                resolveWifiRssi(payload, nodeStatus),
+                                resolveHumanDetected(occupancy, nodeStatus)
                         ),
                         () -> nodeStatusSnapshotRepository.save(new NodeStatusSnapshot(
                                 node,
@@ -65,17 +74,26 @@ public class Dht22SnapshotUpdateService {
                                 sensorStatus,
                                 dht22Status,
                                 scd41Status,
-                                null,
-                                null,
+                                payload.getWifiSignalDbm(),
+                                occupancy.humanDetected(),
                                 receivedAt,
                                 receivedAt
                         ))
                 );
     }
 
+    private Integer resolveWifiRssi(Dht22Payload payload, NodeStatusSnapshot nodeStatus) {
+        return payload.getWifiSignalDbm() == null ? nodeStatus.getWifiRssi() : payload.getWifiSignalDbm();
+    }
+
+    private Boolean resolveHumanDetected(OccupancyFusionResult occupancy, NodeStatusSnapshot nodeStatus) {
+        return occupancy.sourcePresent() ? occupancy.humanDetected() : nodeStatus.getHumanDetected();
+    }
+
     private void updateSpaceStatus(
             NodeInstallation installation,
             Dht22Payload payload,
+            OccupancyFusionResult occupancy,
             LocalDateTime receivedAt
     ) {
         BigDecimal temperature = toScaledBigDecimal(payload.getTemperature());
@@ -83,11 +101,13 @@ public class Dht22SnapshotUpdateService {
 
         spaceStatusSnapshotRepository.findBySpace_Id(installation.getSpace().getId())
                 .ifPresentOrElse(
-                        spaceStatus -> spaceStatus.updateLatestSensorValues(
-                                installation.getNode(),
+                        spaceStatus -> updateExistingSpaceStatus(
+                                spaceStatus,
+                                installation,
                                 temperature,
                                 humidity,
-                                payload.getCo2Ppm(),
+                                payload,
+                                occupancy,
                                 receivedAt
                         ),
                         () -> spaceStatusSnapshotRepository.save(new SpaceStatusSnapshot(
@@ -96,12 +116,43 @@ public class Dht22SnapshotUpdateService {
                                 temperature,
                                 humidity,
                                 payload.getCo2Ppm(),
-                                null,
-                                null,
+                                occupancy.sourcePresent() ? occupancy.humanDetected() : null,
+                                occupancy.sourcePresent() ? occupancy.occupancyStatus() : null,
                                 null,
                                 receivedAt
                         ))
                 );
+    }
+
+    private void updateExistingSpaceStatus(
+            SpaceStatusSnapshot spaceStatus,
+            NodeInstallation installation,
+            BigDecimal temperature,
+            BigDecimal humidity,
+            Dht22Payload payload,
+            OccupancyFusionResult occupancy,
+            LocalDateTime receivedAt
+    ) {
+        if (occupancy.sourcePresent()) {
+            spaceStatus.updateLatestSensorValues(
+                    installation.getNode(),
+                    temperature,
+                    humidity,
+                    payload.getCo2Ppm(),
+                    occupancy.humanDetected(),
+                    occupancy.occupancyStatus(),
+                    receivedAt
+            );
+            return;
+        }
+
+        spaceStatus.updateLatestSensorValues(
+                installation.getNode(),
+                temperature,
+                humidity,
+                payload.getCo2Ppm(),
+                receivedAt
+        );
     }
 
     private BigDecimal toScaledBigDecimal(Double value) {

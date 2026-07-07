@@ -129,6 +129,32 @@ public class SpaceStatusSnapshot {
         this.lastUpdatedAt = lastUpdatedAt;
     }
 
+    public void updateLatestSensorValues(
+            AirsNode sourceNode,
+            BigDecimal temperature,
+            BigDecimal humidity,
+            Integer co2Ppm,
+            Boolean humanDetected,
+            OccupancyStatus occupancyStatus,
+            LocalDateTime lastUpdatedAt
+    ) {
+        updateLatestSensorValues(sourceNode, temperature, humidity, co2Ppm, lastUpdatedAt);
+        this.humanDetected = humanDetected;
+        this.occupancyStatus = occupancyStatus;
+        this.occupancySummary = toOccupancySummary(occupancyStatus);
+    }
+
+    private String toOccupancySummary(OccupancyStatus occupancyStatus) {
+        if (occupancyStatus == null) {
+            return null;
+        }
+        return switch (occupancyStatus) {
+            case OCCUPIED -> "재실";
+            case UNOCCUPIED -> "비재실";
+            case UNKNOWN -> "확인중";
+        };
+    }
+
     @PrePersist
     protected void prePersist() {
         this.updatedAt = LocalDateTime.now();

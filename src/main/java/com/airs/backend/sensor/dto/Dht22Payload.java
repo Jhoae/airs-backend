@@ -29,6 +29,12 @@ public class Dht22Payload {
     private Double scd41Humidity;
     @JsonAlias("sensor_status")
     private TelemetrySensorStatus sensorStatus;
+    @JsonAlias("pir_detected")
+    private Integer pirDetected;
+    @JsonAlias("mmwave_detected")
+    private Integer mmwaveDetected;
+    @JsonAlias("wifi_signal_dbm")
+    private Integer wifiSignalDbm;
     private Instant timestamp;
 
     public Dht22Payload(Double temperature, Double humidity, Instant timestamp) {

@@ -111,6 +111,9 @@ class MqttDht22SubscriberTest {
                   "co2_ppm": 1900,
                   "scd41_temperature_c": 20.6,
                   "scd41_humidity_pct": 61.9,
+                  "pir_detected": 1,
+                  "mmwave_detected": 0,
+                  "wifi_signal_dbm": -58,
                   "sensor_status": {
                     "dht22": "OK",
                     "scd41": "OK"
@@ -135,6 +138,9 @@ class MqttDht22SubscriberTest {
         assertEquals(1900, payload.getCo2Ppm());
         assertEquals(20.6, payload.getScd41Temperature());
         assertEquals(61.9, payload.getScd41Humidity());
+        assertEquals(1, payload.getPirDetected());
+        assertEquals(0, payload.getMmwaveDetected());
+        assertEquals(-58, payload.getWifiSignalDbm());
         assertEquals("OK", payload.getDht22Status());
         assertEquals("OK", payload.getScd41Status());
     }

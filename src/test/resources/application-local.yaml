@@ -23,3 +23,7 @@ influx:
   bucket: test-bucket
   measurement: sensor_data
   node-id-tag: node_id
+
+occupancy:
+  stale-after-minutes: 10
+  influx-write-enabled: false

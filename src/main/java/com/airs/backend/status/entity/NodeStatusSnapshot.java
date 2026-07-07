@@ -123,10 +123,23 @@ public class NodeStatusSnapshot {
             String dht22Status,
             String scd41Status
     ) {
+        markSensorReceived(receivedAt, sensorStatus, dht22Status, scd41Status, null, null);
+    }
+
+    public void markSensorReceived(
+            LocalDateTime receivedAt,
+            SensorStatus sensorStatus,
+            String dht22Status,
+            String scd41Status,
+            Integer wifiRssi,
+            Boolean humanDetected
+    ) {
         this.connectionStatus = ConnectionStatus.ONLINE;
         this.sensorStatus = sensorStatus;
         this.dht22Status = dht22Status;
         this.scd41Status = scd41Status;
+        this.wifiRssi = wifiRssi;
+        this.humanDetected = humanDetected;
         this.lastSeenAt = receivedAt;
         this.lastSensorReceivedAt = receivedAt;
     }
