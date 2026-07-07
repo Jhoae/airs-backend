@@ -460,6 +460,35 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /airs/admin/analytics/overview:
+    get:
+      tags:
+        - Admin Analytics
+      summary: 관리자 분석 요약 조회
+      description: 분석 요약 화면의 전체 요약 탭을 위한 API입니다. AI 요약, comfort score, 냉방 낭비처럼 아직 기준이 확정되지 않은 값은 null로 반환합니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 조회 기준 날짜입니다. 생략하면 서버 기준 오늘 날짜를 사용합니다.
+          schema:
+            type: string
+            format: date
+            example: '2026-07-07'
+      responses:
+        '200':
+          description: 분석 요약 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAnalyticsOverviewResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /airs/admin/nodes/installations:
     post:
       tags:
@@ -1350,6 +1379,154 @@ components:
         co2StatusLabel:
           type: string
           example: 나쁨
+    AdminAnalyticsOverviewResponse:
+      type: object
+      properties:
+        campusId:
+          type: integer
+          format: int64
+        campusName:
+          type: string
+          example: 서강대학교
+        date:
+          type: string
+          format: date
+          example: '2026-07-07'
+        summaryText:
+          type: string
+          nullable: true
+          description: AI 요약이 확정되기 전까지 null입니다.
+          example: null
+        metrics:
+          $ref: '#/components/schemas/AdminAnalyticsOverviewMetricsResponse'
+        co2AverageTrend:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCo2TrendPointResponse'
+        statusDistributions:
+          $ref: '#/components/schemas/AdminAnalyticsStatusDistributionsResponse'
+        topInsights:
+          type: array
+          description: AI가 아닌 rule-based 주요 점검 항목입니다. 후보가 부족하면 3개보다 적게 반환합니다.
+          items:
+            $ref: '#/components/schemas/AdminAnalyticsInsightResponse'
+    AdminAnalyticsOverviewMetricsResponse:
+      type: object
+      properties:
+        averageComfortScore:
+          type: integer
+          nullable: true
+          description: Comfort score 산식 확정 전까지 null입니다.
+          example: null
+        ventilationRecommendedSpaceCount:
+          type: integer
+          example: 3
+        ventilationNeededSpaceCount:
+          type: integer
+          example: 1
+        coolingWasteSuspectedCount:
+          type: integer
+          nullable: true
+          description: 냉방 낭비 rule 확정 전까지 null입니다.
+          example: null
+        onlineNodeCount:
+          type: integer
+          format: int64
+          example: 24
+        weakNodeCount:
+          type: integer
+          format: int64
+          example: 1
+        offlineNodeCount:
+          type: integer
+          format: int64
+          example: 0
+        unknownNodeCount:
+          type: integer
+          format: int64
+          example: 0
+        totalNodeCount:
+          type: integer
+          example: 25
+        onlineNodePercent:
+          type: integer
+          example: 96
+    AdminAnalyticsStatusDistributionsResponse:
+      type: object
+      properties:
+        co2:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAnalyticsDistributionItemResponse'
+        connection:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAnalyticsDistributionItemResponse'
+        occupancy:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAnalyticsDistributionItemResponse'
+        wifi:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAnalyticsDistributionItemResponse'
+    AdminAnalyticsDistributionItemResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: WARNING
+        label:
+          type: string
+          example: 주의
+        rangeLabel:
+          type: string
+          nullable: true
+          example: 1,001~1,500 ppm
+        count:
+          type: integer
+          example: 4
+        percent:
+          type: integer
+          example: 16
+    AdminAnalyticsInsightResponse:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - CO2
+            - NODE
+            - WIFI
+          example: CO2
+        severity:
+          type: string
+          enum:
+            - BAD
+            - WARNING
+          example: WARNING
+        title:
+          type: string
+          example: CO2 1248ppm - R904 로욜라도서관 904호
+        message:
+          type: string
+          example: CO2가 1,000ppm을 넘었습니다. 환기 권장을 검토해주세요.
+        nodeId:
+          type: string
+          nullable: true
+          example: node_01
+        spaceId:
+          type: integer
+          format: int64
+        spaceCode:
+          type: string
+          example: R904
+        spaceName:
+          type: string
+          example: 904호
+        buildingName:
+          type: string
+          example: 로욜라도서관
 
     DailyDht22SummaryResponse:
       type: object

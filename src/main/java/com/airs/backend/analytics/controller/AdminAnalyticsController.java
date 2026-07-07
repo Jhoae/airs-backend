@@ -1,6 +1,8 @@
 package com.airs.backend.analytics.controller;
 
 import com.airs.backend.analytics.dto.AdminCo2AnalyticsResponse;
+import com.airs.backend.analytics.dto.AdminAnalyticsOverviewResponse;
+import com.airs.backend.analytics.service.AdminAnalyticsOverviewService;
 import com.airs.backend.analytics.service.AdminCo2AnalyticsService;
 import com.airs.backend.global.jwt.CurrentUserPrincipal;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,19 @@ import java.time.LocalDate;
 public class AdminAnalyticsController {
 
     private final AdminCo2AnalyticsService adminCo2AnalyticsService;
+    private final AdminAnalyticsOverviewService adminAnalyticsOverviewService;
+
+    @GetMapping("/overview")
+    public ResponseEntity<AdminAnalyticsOverviewResponse> getOverview(
+            @AuthenticationPrincipal CurrentUserPrincipal currentUser,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        AdminAnalyticsOverviewResponse response = adminAnalyticsOverviewService.getOverview(
+                currentUser.getUserId(),
+                date
+        );
+        return ResponseEntity.ok(response);
+    }
 
     @GetMapping("/co2")
     public ResponseEntity<AdminCo2AnalyticsResponse> getCo2Analytics(
