@@ -62,7 +62,7 @@ class OccupancyFusionServiceTest {
     }
 
     @Test
-    void resolve_should_return_unknown_when_no_motion_has_ever_been_seen() {
+    void resolve_should_return_unknown_before_stale_after_when_no_motion_has_ever_been_seen() {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
 
         OccupancyFusionResult result = service.resolve(
@@ -75,6 +75,24 @@ class OccupancyFusionServiceTest {
         assertEquals(OccupancyStatus.UNKNOWN, result.occupancyStatus());
         assertNull(result.occupancyPresent());
         assertNull(result.minutesSinceMotion());
+        assertEquals(true, result.sourcePresent());
+    }
+
+    @Test
+    void resolve_should_return_absent_after_stale_after_when_no_motion_continues_without_prior_detection() {
+        OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
+        service.resolve("node_01", payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 0));
+
+        OccupancyFusionResult result = service.resolve(
+                "node_01",
+                payload(Instant.parse("2026-07-07T00:11:00Z"), 0, 0)
+        );
+
+        assertEquals(TelemetryOccupancyState.ABSENT, result.state());
+        assertEquals(false, result.humanDetected());
+        assertEquals(OccupancyStatus.UNOCCUPIED, result.occupancyStatus());
+        assertEquals(0, result.occupancyPresent());
+        assertEquals(11.0, result.minutesSinceMotion());
         assertEquals(true, result.sourcePresent());
     }
 

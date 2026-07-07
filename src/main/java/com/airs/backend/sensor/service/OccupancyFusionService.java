@@ -18,6 +18,7 @@ public class OccupancyFusionService {
 
     private final OccupancyProperties occupancyProperties;
     private final Map<String, Instant> lastMotionByNodeId = new ConcurrentHashMap<>();
+    private final Map<String, Instant> noMotionStartedByNodeId = new ConcurrentHashMap<>();
 
     public OccupancyFusionResult resolve(String nodeId, Dht22Payload payload) {
         if (nodeId == null || nodeId.isBlank() || payload == null || payload.getTimestamp() == null) {
@@ -34,12 +35,18 @@ public class OccupancyFusionService {
         Instant now = payload.getTimestamp();
         if (isDetected(pir) || isDetected(mmwave)) {
             lastMotionByNodeId.put(nodeId, now);
+            noMotionStartedByNodeId.remove(nodeId);
             return present(0.0);
         }
 
         Instant lastMotionAt = lastMotionByNodeId.get(nodeId);
         if (lastMotionAt == null) {
-            return unknown(true);
+            Instant noMotionStartedAt = noMotionStartedByNodeId.computeIfAbsent(nodeId, ignored -> now);
+            double minutesSinceNoMotion = Duration.between(noMotionStartedAt, now).toMillis() / 60000.0;
+            if (minutesSinceNoMotion < occupancyProperties.getStaleAfterMinutes()) {
+                return unknown(true);
+            }
+            return absent(roundOneDecimal(minutesSinceNoMotion));
         }
 
         double minutesSinceMotion = Duration.between(lastMotionAt, now).toMillis() / 60000.0;
