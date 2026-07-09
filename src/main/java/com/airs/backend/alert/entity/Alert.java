@@ -125,6 +125,31 @@ public class Alert {
         this.lastDetectedAt = detectedAt;
     }
 
+    public void refresh(
+            AlertSeverity severity,
+            String title,
+            String message,
+            String metricName,
+            BigDecimal metricValue,
+            String metricUnit,
+            LocalDateTime detectedAt
+    ) {
+        this.severity = severity;
+        this.title = title;
+        this.message = message;
+        this.metricName = metricName;
+        this.metricValue = metricValue;
+        this.metricUnit = metricUnit;
+        this.status = AlertStatus.ACTIVE;
+        this.resolvedAt = null;
+        this.lastDetectedAt = detectedAt;
+    }
+
+    public void resolve(LocalDateTime resolvedAt) {
+        this.status = AlertStatus.RESOLVED;
+        this.resolvedAt = resolvedAt;
+    }
+
     @PrePersist
     protected void prePersist() {
         LocalDateTime now = LocalDateTime.now();

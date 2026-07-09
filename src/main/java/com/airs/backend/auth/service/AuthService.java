@@ -8,6 +8,7 @@ import com.airs.backend.global.jwt.JwtTokenProvider;
 import com.airs.backend.location.entity.Campus;
 import com.airs.backend.location.repository.CampusRepository;
 import com.airs.backend.user.entity.CampusAdmin;
+import com.airs.backend.user.entity.CampusAdminStatus;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserPreference;
 import com.airs.backend.user.entity.UserRole;
@@ -61,7 +62,7 @@ public class AuthService {
 
         User savedUser = userRepository.save(user);
         if (savedUser.getRole() == UserRole.ADMIN) {
-            campusAdminRepository.save(new CampusAdmin(campus, savedUser, false));
+            campusAdminRepository.save(new CampusAdmin(campus, savedUser, CampusAdminStatus.PENDING));
         }
 
         UserPreference userPreference = new UserPreference(null, null, null);

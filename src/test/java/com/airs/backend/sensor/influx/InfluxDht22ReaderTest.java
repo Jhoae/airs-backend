@@ -3,7 +3,10 @@ package com.airs.backend.sensor.influx;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -20,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.airs.backend.sensor.config.InfluxProperties;
+import com.airs.backend.sensor.dto.AiSensorTrendData;
 import com.airs.backend.sensor.dto.Co2TrendItem;
 import com.airs.backend.sensor.dto.DailyDht22SummaryResponse;
 import com.airs.backend.sensor.dto.Dht22MeasurementItem;
@@ -166,11 +170,68 @@ class InfluxDht22ReaderTest {
     }
 
     @Test
+    void readAiSensorTrend_should_query_recent_measurements_and_calculate_ai_trend_values() {
+        Instant to = Instant.parse("2026-07-09T01:30:00Z");
+
+        FluxTable measurementTable = mock(FluxTable.class);
+        FluxRecord firstRecord = measurementRecord("2026-07-09T01:00:00Z", 25.0, 50.0, 900.0);
+        FluxRecord tenMinutesAgoRecord = measurementRecord("2026-07-09T01:20:00Z", 24.5, 51.0, 970.0);
+        FluxRecord overThresholdRecord = measurementRecord("2026-07-09T01:25:00Z", 24.0, 52.0, 1100.0);
+        FluxRecord latestRecord = measurementRecord("2026-07-09T01:30:00Z", 23.8, 52.5, 1120.0);
+        when(measurementTable.getRecords()).thenReturn(List.of(
+                firstRecord,
+                tenMinutesAgoRecord,
+                overThresholdRecord,
+                latestRecord
+        ));
+
+        FluxTable occupancyTable = mock(FluxTable.class);
+        FluxRecord minutesSinceMotionRecord = mock(FluxRecord.class);
+        when(minutesSinceMotionRecord.getValue()).thenReturn(12.4);
+        when(occupancyTable.getRecords()).thenReturn(List.of(minutesSinceMotionRecord));
+
+        when(queryApi.query(anyString(), eq("airs-org")))
+                .thenReturn(List.of(measurementTable))
+                .thenReturn(List.of(occupancyTable));
+
+        AiSensorTrendData trend = influxDht22Reader.readAiSensorTrend("node_01", to);
+
+        assertEquals(23.8, trend.getLatestMeasurement().getTemperature());
+        assertEquals(52.5, trend.getLatestMeasurement().getHumidity());
+        assertEquals(1120, trend.getLatestMeasurement().getCo2Ppm());
+        assertEquals(150.0, trend.getCo2Rate10m());
+        assertEquals(5, trend.getCo2Over1000Minutes());
+        assertEquals(-1.2, trend.getTempRate30m(), 0.0001);
+        assertEquals(12, trend.getNoOccupancyMinutes());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi, times(2)).query(queryCaptor.capture(), eq("airs-org"));
+        List<String> queries = queryCaptor.getAllValues();
+        assertEquals(true, queries.get(0).contains("r._field == \"temperature_c\" or r._field == \"humidity_pct\" or r._field == \"co2_ppm\""));
+        assertEquals(true, queries.get(1).contains("r._field == \"minutes_since_motion\""));
+        assertEquals(true, queries.get(1).contains("|> last()"));
+    }
+
+    @Test
     void readRange_should_fail_when_from_is_after_to() {
         Instant from = Instant.parse("2026-05-06T01:00:00Z");
         Instant to = Instant.parse("2026-05-06T00:00:00Z");
 
         assertThrows(IllegalArgumentException.class,
                 () -> influxDht22Reader.readRange("node_01", from, to));
+    }
+
+    private FluxRecord measurementRecord(
+            String timestamp,
+            Double temperature,
+            Double humidity,
+            Double co2Ppm
+    ) {
+        FluxRecord record = mock(FluxRecord.class);
+        when(record.getValueByKey("temperature_c")).thenReturn(temperature);
+        when(record.getValueByKey("humidity_pct")).thenReturn(humidity);
+        when(record.getValueByKey("co2_ppm")).thenReturn(co2Ppm);
+        when(record.getTime()).thenReturn(Instant.parse(timestamp));
+        return record;
     }
 }

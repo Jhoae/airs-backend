@@ -1,5 +1,10 @@
 package com.airs.backend.sensor.service;
 
+import com.airs.backend.ai.service.SpaceEvaluationPayloadAssembler;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.Co2Status;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationPayload;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationResult;
 import com.airs.backend.node.entity.AirsNode;
 import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.NodeInstallationRepository;
@@ -31,6 +36,8 @@ public class Dht22SnapshotUpdateService {
     private final NodeStatusSnapshotRepository nodeStatusSnapshotRepository;
     private final SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
     private final OccupancyFusionService occupancyFusionService;
+    private final SpaceEvaluationPayloadAssembler spaceEvaluationPayloadAssembler;
+    private final SpaceStatusEvaluationService spaceStatusEvaluationService;
 
     @Transactional
     public void updateLatestSnapshot(String nodeId, Dht22Payload payload) {
@@ -110,18 +117,38 @@ public class Dht22SnapshotUpdateService {
                                 occupancy,
                                 receivedAt
                         ),
-                        () -> spaceStatusSnapshotRepository.save(new SpaceStatusSnapshot(
-                                installation.getSpace(),
-                                installation.getNode(),
+                        () -> spaceStatusSnapshotRepository.save(createSpaceStatusSnapshot(
+                                installation,
                                 temperature,
                                 humidity,
-                                payload.getCo2Ppm(),
-                                occupancy.sourcePresent() ? occupancy.humanDetected() : null,
-                                occupancy.sourcePresent() ? occupancy.occupancyStatus() : null,
-                                null,
+                                payload,
+                                occupancy,
                                 receivedAt
                         ))
                 );
+    }
+
+    private SpaceStatusSnapshot createSpaceStatusSnapshot(
+            NodeInstallation installation,
+            BigDecimal temperature,
+            BigDecimal humidity,
+            Dht22Payload payload,
+            OccupancyFusionResult occupancy,
+            LocalDateTime receivedAt
+    ) {
+        SpaceStatusSnapshot spaceStatus = new SpaceStatusSnapshot(
+                installation.getSpace(),
+                installation.getNode(),
+                temperature,
+                humidity,
+                payload.getCo2Ppm(),
+                occupancy.sourcePresent() ? occupancy.humanDetected() : null,
+                occupancy.sourcePresent() ? occupancy.occupancyStatus() : null,
+                null,
+                receivedAt
+        );
+        updateAiEvaluation(spaceStatus, installation, payload, occupancy);
+        return spaceStatus;
     }
 
     private void updateExistingSpaceStatus(
@@ -143,6 +170,7 @@ public class Dht22SnapshotUpdateService {
                     occupancy.occupancyStatus(),
                     receivedAt
             );
+            updateAiEvaluation(spaceStatus, installation, payload, occupancy);
             return;
         }
 
@@ -153,6 +181,37 @@ public class Dht22SnapshotUpdateService {
                 payload.getCo2Ppm(),
                 receivedAt
         );
+        updateAiEvaluation(spaceStatus, installation, payload, occupancy);
+    }
+
+    private void updateAiEvaluation(
+            SpaceStatusSnapshot spaceStatus,
+            NodeInstallation installation,
+            Dht22Payload payload,
+            OccupancyFusionResult occupancy
+    ) {
+        SpaceEvaluationPayload evaluationPayload = spaceEvaluationPayloadAssembler.fromTelemetry(
+                installation,
+                payload,
+                occupancy
+        );
+        SpaceEvaluationResult result = spaceStatusEvaluationService.evaluateSpaceStatus(evaluationPayload);
+
+        spaceStatus.updateAiEvaluation(
+                BigDecimal.valueOf(result.comfort().score()).setScale(2, RoundingMode.HALF_UP),
+                result.comfort().labelKo(),
+                toCo2Summary(result.ventilation().co2Status())
+        );
+    }
+
+    private String toCo2Summary(Co2Status co2Status) {
+        return switch (co2Status) {
+            case GOOD -> "좋음";
+            case NORMAL -> "보통";
+            case WARNING -> "주의";
+            case BAD -> "나쁨";
+            case UNKNOWN -> "데이터 없음";
+        };
     }
 
     private BigDecimal toScaledBigDecimal(Double value) {

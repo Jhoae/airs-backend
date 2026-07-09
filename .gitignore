@@ -42,18 +42,3 @@ src/test/resources/application.properties
 *.jks
 
 *.log
-
-# 새로 만드는 테스트 코드는 기본적으로 Git 추적에서 제외
-!src/test/
-src/test/*
-!src/test/resources/
-!src/test/resources/application-local.yaml
-
-# Flyway baseline 검증 테스트는 운영 DB migration 안전장치라 예외적으로 추적
-!src/test/java/
-!src/test/java/com/
-!src/test/java/com/airs/
-!src/test/java/com/airs/backend/
-src/test/java/com/airs/backend/*
-!src/test/java/com/airs/backend/flyway/
-!src/test/java/com/airs/backend/flyway/*.java

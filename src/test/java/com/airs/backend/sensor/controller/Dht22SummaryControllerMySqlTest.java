@@ -15,6 +15,7 @@ import com.airs.backend.node.repository.NodeInstallationRepository;
 import com.airs.backend.sensor.dto.DailyDht22SummaryResponse;
 import com.airs.backend.sensor.influx.InfluxDht22Reader;
 import com.airs.backend.user.entity.CampusAdmin;
+import com.airs.backend.user.entity.CampusAdminStatus;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserRole;
 import com.airs.backend.user.repository.CampusAdminRepository;
@@ -199,7 +200,7 @@ class Dht22SummaryControllerMySqlTest {
                     "01012345678",
                     UserRole.ADMIN
             ));
-            campusAdminRepository.save(new CampusAdmin(campus, user, true));
+            campusAdminRepository.save(new CampusAdmin(campus, user, CampusAdminStatus.APPROVED));
             return user.getUserId();
         });
     }

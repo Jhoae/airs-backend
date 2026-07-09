@@ -14,6 +14,9 @@ public interface NodeInstallationRepository extends JpaRepository<NodeInstallati
     @EntityGraph(attributePaths = {"node", "space", "space.building", "space.campus"})
     Optional<NodeInstallation> findByNode_IdAndActiveTrue(String nodeId);
 
+    @EntityGraph(attributePaths = {"node", "space", "space.building", "space.campus"})
+    List<NodeInstallation> findAllByActiveTrue();
+
     Optional<NodeInstallation> findFirstBySpace_IdAndActiveTrueOrderByInstalledAtAsc(Long spaceId);
 
     List<NodeInstallation> findAllBySpace_IdAndActiveTrue(Long spaceId);

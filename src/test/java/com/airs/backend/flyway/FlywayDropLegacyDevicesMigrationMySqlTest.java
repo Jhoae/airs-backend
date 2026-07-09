@@ -47,6 +47,7 @@ class FlywayDropLegacyDevicesMigrationMySqlTest {
 			assertThat(tableExists(statement, "devices")).isFalse();
 			assertThat(countFlywayHistory(statement, "1", "BASELINE")).isEqualTo(1);
 			assertThat(countFlywayHistory(statement, "2", "SQL")).isEqualTo(1);
+			assertThat(countFlywayHistory(statement, "3", "SQL")).isEqualTo(1);
 		}
 	}
 

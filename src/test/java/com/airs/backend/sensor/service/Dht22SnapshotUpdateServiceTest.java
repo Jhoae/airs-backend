@@ -1,5 +1,23 @@
 package com.airs.backend.sensor.service;
 
+import com.airs.backend.ai.service.SpaceEvaluationPayloadAssembler;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.Co2Status;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.ComfortComponents;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.ComfortResult;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.ComfortStatus;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.HvacWasteResult;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.HvacWasteSeverity;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.OccupancyState;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.ReportSummaryValues;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationContext;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationCurrent;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationPayload;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationResult;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationTrend;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.VentilationRecommendationLevel;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.VentilationResult;
+import com.airs.backend.ai.service.SpaceStatusEvaluationService.VentilationStatus;
 import com.airs.backend.location.entity.Building;
 import com.airs.backend.location.entity.Campus;
 import com.airs.backend.location.entity.Space;
@@ -27,11 +45,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -50,6 +72,12 @@ class Dht22SnapshotUpdateServiceTest {
 
     @Mock
     private OccupancyFusionService occupancyFusionService;
+
+    @Mock
+    private SpaceEvaluationPayloadAssembler spaceEvaluationPayloadAssembler;
+
+    @Mock
+    private SpaceStatusEvaluationService spaceStatusEvaluationService;
 
     @InjectMocks
     private Dht22SnapshotUpdateService dht22SnapshotUpdateService;
@@ -90,15 +118,17 @@ class Dht22SnapshotUpdateServiceTest {
                 .thenReturn(Optional.of(nodeStatus));
         when(spaceStatusSnapshotRepository.findBySpace_Id(fixture.space().getId()))
                 .thenReturn(Optional.of(spaceStatus));
-        when(occupancyFusionService.resolve("node_01", payload))
-                .thenReturn(new OccupancyFusionResult(
-                        TelemetryOccupancyState.PRESENT,
-                        true,
-                        OccupancyStatus.OCCUPIED,
-                        1,
-                        0.0,
-                        true
-                ));
+        OccupancyFusionResult occupancy = new OccupancyFusionResult(
+                TelemetryOccupancyState.PRESENT,
+                true,
+                OccupancyStatus.OCCUPIED,
+                1,
+                0.0,
+                true
+        );
+        when(occupancyFusionService.resolve("node_01", payload)).thenReturn(occupancy);
+        givenPayloadAssembly(fixture, payload, occupancy);
+        givenAiEvaluation(82, "쾌적", Co2Status.NORMAL);
 
         dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload);
 
@@ -117,6 +147,10 @@ class Dht22SnapshotUpdateServiceTest {
         assertEquals(true, spaceStatus.getHumanDetected());
         assertEquals(OccupancyStatus.OCCUPIED, spaceStatus.getOccupancyStatus());
         assertEquals(receivedAt, spaceStatus.getLastUpdatedAt());
+        assertEquals(new BigDecimal("82.00"), spaceStatus.getComfortScore());
+        assertEquals("쾌적", spaceStatus.getComfortSummary());
+        assertEquals("보통", spaceStatus.getCo2Summary());
+        assertEquals("쾌적", spaceStatus.getSpaceSummary());
     }
 
     @Test
@@ -130,15 +164,17 @@ class Dht22SnapshotUpdateServiceTest {
                 .thenReturn(Optional.empty());
         when(spaceStatusSnapshotRepository.findBySpace_Id(fixture.space().getId()))
                 .thenReturn(Optional.empty());
-        when(occupancyFusionService.resolve("node_01", payload))
-                .thenReturn(new OccupancyFusionResult(
-                        TelemetryOccupancyState.UNKNOWN,
-                        null,
-                        OccupancyStatus.UNKNOWN,
-                        null,
-                        null,
-                        false
-                ));
+        OccupancyFusionResult occupancy = new OccupancyFusionResult(
+                TelemetryOccupancyState.UNKNOWN,
+                null,
+                OccupancyStatus.UNKNOWN,
+                null,
+                null,
+                false
+        );
+        when(occupancyFusionService.resolve("node_01", payload)).thenReturn(occupancy);
+        givenPayloadAssembly(fixture, payload, occupancy);
+        givenAiEvaluation(76, "보통", Co2Status.NORMAL);
 
         dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload);
 
@@ -178,15 +214,17 @@ class Dht22SnapshotUpdateServiceTest {
                 .thenReturn(Optional.of(nodeStatus));
         when(spaceStatusSnapshotRepository.findBySpace_Id(fixture.space().getId()))
                 .thenReturn(Optional.of(spaceStatus));
-        when(occupancyFusionService.resolve("node_01", payload))
-                .thenReturn(new OccupancyFusionResult(
-                        TelemetryOccupancyState.UNKNOWN,
-                        null,
-                        OccupancyStatus.UNKNOWN,
-                        null,
-                        null,
-                        false
-                ));
+        OccupancyFusionResult occupancy = new OccupancyFusionResult(
+                TelemetryOccupancyState.UNKNOWN,
+                null,
+                OccupancyStatus.UNKNOWN,
+                null,
+                null,
+                false
+        );
+        when(occupancyFusionService.resolve("node_01", payload)).thenReturn(occupancy);
+        givenPayloadAssembly(fixture, payload, occupancy);
+        givenAiEvaluation(65, "보통", Co2Status.NORMAL);
 
         dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload);
 
@@ -197,6 +235,10 @@ class Dht22SnapshotUpdateServiceTest {
         assertEquals(new BigDecimal("25.10"), spaceStatus.getTemperature());
         assertEquals(new BigDecimal("49.90"), spaceStatus.getHumidity());
         assertEquals(900, spaceStatus.getCo2Ppm());
+        assertEquals(new BigDecimal("65.00"), spaceStatus.getComfortScore());
+        assertEquals("보통", spaceStatus.getComfortSummary());
+        assertEquals("보통", spaceStatus.getCo2Summary());
+        assertEquals("보통", spaceStatus.getSpaceSummary());
     }
 
     @Test
@@ -209,6 +251,64 @@ class Dht22SnapshotUpdateServiceTest {
         dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload);
 
         verifyNoInteractions(nodeStatusSnapshotRepository, spaceStatusSnapshotRepository, occupancyFusionService);
+    }
+
+    private void givenPayloadAssembly(
+            SnapshotFixture fixture,
+            Dht22Payload payload,
+            OccupancyFusionResult occupancy
+    ) {
+        when(spaceEvaluationPayloadAssembler.fromTelemetry(eq(fixture.installation()), eq(payload), eq(occupancy)))
+                .thenReturn(new SpaceEvaluationPayload(
+                        new SpaceEvaluationContext(fixture.space().getId()),
+                        new SpaceEvaluationCurrent(
+                                payload.getTemperature(),
+                                payload.getHumidity(),
+                                payload.getCo2Ppm(),
+                                OccupancyState.PRESENT,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null
+                        ),
+                        new SpaceEvaluationTrend(null, null, null, null, null, null, null)
+                ));
+    }
+
+    private void givenAiEvaluation(int comfortScore, String comfortLabel, Co2Status co2Status) {
+        when(spaceStatusEvaluationService.evaluateSpaceStatus(any(SpaceEvaluationPayload.class)))
+                .thenReturn(new SpaceEvaluationResult(
+                        1L,
+                        OffsetDateTime.parse("2026-07-02T12:00:00+09:00"),
+                        new ComfortResult(
+                                comfortScore,
+                                ComfortStatus.GOOD,
+                                comfortLabel,
+                                new ComfortComponents(0.0, 0.0, 0.0, 0.0, 0.0),
+                                List.of()
+                        ),
+                        new VentilationResult(
+                                VentilationStatus.GOOD,
+                                co2Status,
+                                VentilationRecommendationLevel.NONE,
+                                false,
+                                "환기 상태가 양호합니다.",
+                                List.of()
+                        ),
+                        new HvacWasteResult(false, HvacWasteSeverity.NONE, null, null, List.of()),
+                        new ReportSummaryValues(
+                                comfortScore,
+                                842,
+                                co2Status,
+                                OccupancyState.PRESENT,
+                                false,
+                                false
+                        )
+                ));
     }
 
     private SnapshotFixture snapshotFixture() {

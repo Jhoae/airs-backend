@@ -1,12 +1,15 @@
 package com.airs.backend.sensor.influx;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 
 import com.airs.backend.sensor.config.InfluxProperties;
+import com.airs.backend.sensor.dto.AiSensorTrendData;
 import com.airs.backend.sensor.dto.Co2TrendItem;
 import com.airs.backend.sensor.dto.DailyDht22SummaryResponse;
 import com.airs.backend.sensor.dto.Dht22MeasurementItem;
@@ -281,6 +284,27 @@ public class InfluxDht22Reader {
                 .toList();
     }
 
+    public AiSensorTrendData readAiSensorTrend(String nodeId, Instant to) {
+        if (nodeId == null || nodeId.isBlank()) {
+            throw new IllegalArgumentException("nodeId가 비어 있습니다.");
+        }
+
+        if (to == null) {
+            throw new IllegalArgumentException("to가 비어 있습니다.");
+        }
+
+        Instant from = to.minus(30, ChronoUnit.MINUTES);
+        List<Dht22MeasurementItem> measurements = queryMeasurements(nodeId, from, to);
+
+        return new AiSensorTrendData(
+                latestMeasurement(measurements),
+                calculateCo2Rate10m(measurements, to),
+                calculateCo2Over1000Minutes(measurements, from, to),
+                calculateTempRate30m(measurements),
+                readLatestIntegerField(nodeId, "minutes_since_motion", from, to)
+        );
+    }
+
     private List<Dht22MeasurementItem> queryMeasurements(String nodeId, Instant from, Instant to) {
         if (queryApi == null) {
             throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
@@ -309,6 +333,108 @@ public class InfluxDht22Reader {
                 .flatMap(table -> table.getRecords().stream())
                 .map(record -> toMeasurementItem(record))
                 .toList();
+    }
+
+    private Dht22MeasurementItem latestMeasurement(List<Dht22MeasurementItem> measurements) {
+        return measurements.stream()
+                .max(Comparator.comparing(Dht22MeasurementItem::getTimestamp))
+                .orElse(null);
+    }
+
+    private Double calculateCo2Rate10m(List<Dht22MeasurementItem> measurements, Instant to) {
+        Dht22MeasurementItem latest = latestCo2Measurement(measurements);
+        if (latest == null) {
+            return null;
+        }
+
+        Instant target = to.minus(10, ChronoUnit.MINUTES);
+        Dht22MeasurementItem baseline = measurements.stream()
+                .filter(item -> item.getCo2Ppm() != null)
+                .filter(item -> !item.getTimestamp().isAfter(target))
+                .max(Comparator.comparing(Dht22MeasurementItem::getTimestamp))
+                .orElse(null);
+
+        if (baseline == null) {
+            return null;
+        }
+        return latest.getCo2Ppm().doubleValue() - baseline.getCo2Ppm().doubleValue();
+    }
+
+    private Dht22MeasurementItem latestCo2Measurement(List<Dht22MeasurementItem> measurements) {
+        return measurements.stream()
+                .filter(item -> item.getCo2Ppm() != null)
+                .max(Comparator.comparing(Dht22MeasurementItem::getTimestamp))
+                .orElse(null);
+    }
+
+    private Integer calculateCo2Over1000Minutes(List<Dht22MeasurementItem> measurements, Instant from, Instant to) {
+        List<Dht22MeasurementItem> co2Measurements = measurements.stream()
+                .filter(item -> item.getCo2Ppm() != null)
+                .sorted(Comparator.comparing(Dht22MeasurementItem::getTimestamp))
+                .toList();
+
+        if (co2Measurements.isEmpty()) {
+            return null;
+        }
+
+        long seconds = 0;
+        for (int index = 0; index < co2Measurements.size(); index++) {
+            Dht22MeasurementItem current = co2Measurements.get(index);
+            Instant segmentStart = current.getTimestamp().isBefore(from) ? from : current.getTimestamp();
+            Instant segmentEnd = index + 1 < co2Measurements.size()
+                    ? co2Measurements.get(index + 1).getTimestamp()
+                    : to;
+
+            if (current.getCo2Ppm() > 1_000 && segmentEnd.isAfter(segmentStart)) {
+                seconds += Duration.between(segmentStart, segmentEnd).toSeconds();
+            }
+        }
+        return (int) Math.round(seconds / 60.0);
+    }
+
+    private Double calculateTempRate30m(List<Dht22MeasurementItem> measurements) {
+        List<Dht22MeasurementItem> temperatureMeasurements = measurements.stream()
+                .filter(item -> item.getTemperature() != null)
+                .sorted(Comparator.comparing(Dht22MeasurementItem::getTimestamp))
+                .toList();
+
+        if (temperatureMeasurements.size() < 2) {
+            return null;
+        }
+
+        Dht22MeasurementItem first = temperatureMeasurements.get(0);
+        Dht22MeasurementItem latest = temperatureMeasurements.get(temperatureMeasurements.size() - 1);
+        return latest.getTemperature() - first.getTemperature();
+    }
+
+    private Integer readLatestIntegerField(String nodeId, String fieldName, Instant from, Instant to) {
+        if (queryApi == null) {
+            throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
+        }
+
+        String query = """
+                from(bucket: "%s")
+                  |> range(start: time(v: "%s"), stop: time(v: "%s"))
+                  |> filter(fn: (r) => r._measurement == "%s")
+                  |> filter(fn: (r) => r.%s == "%s")
+                  |> filter(fn: (r) => r._field == "%s")
+                  |> last()
+                """.formatted(
+                influxProperties.getBucket(),
+                from,
+                to,
+                influxProperties.getMeasurement(),
+                influxProperties.getNodeIdTag(),
+                escapeFluxString(nodeId),
+                fieldName
+        );
+
+        return queryApi.query(query, influxProperties.getOrg())
+                .stream()
+                .flatMap(table -> table.getRecords().stream())
+                .findFirst()
+                .map(record -> toIntegerOrNull(record.getValue(), fieldName))
+                .orElse(null);
     }
 
     private Dht22MeasurementItem toMeasurementItem(FluxRecord record) {
@@ -354,11 +480,15 @@ public class InfluxDht22Reader {
     }
 
     private Integer toIntegerOrNull(Object value) {
+        return toIntegerOrNull(value, "co2_ppm");
+    }
+
+    private Integer toIntegerOrNull(Object value, String fieldName) {
         if (value == null) {
             return null;
         }
         if (!(value instanceof Number number)) {
-            throw new IllegalStateException("co2_ppm 필드를 Integer로 변환할 수 없습니다.");
+            throw new IllegalStateException(fieldName + " 필드를 Integer로 변환할 수 없습니다.");
         }
         return (int) Math.round(number.doubleValue());
     }

@@ -144,6 +144,17 @@ public class SpaceStatusSnapshot {
         this.occupancySummary = toOccupancySummary(occupancyStatus);
     }
 
+    public void updateAiEvaluation(
+            BigDecimal comfortScore,
+            String comfortSummary,
+            String co2Summary
+    ) {
+        this.comfortScore = comfortScore;
+        this.comfortSummary = comfortSummary;
+        this.co2Summary = co2Summary;
+        this.spaceSummary = comfortSummary;
+    }
+
     private String toOccupancySummary(OccupancyStatus occupancyStatus) {
         if (occupancyStatus == null) {
             return null;

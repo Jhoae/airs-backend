@@ -49,33 +49,59 @@ public class AdminCo2AnalyticsService {
         User admin = adminAccessService.getApprovedAdmin(userId);
         LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
 
-        List<Space> spaces = spaceRepository.findAllByCampus_IdAndDeletedAtIsNull(admin.getCampusId());
-        Map<Long, SpaceStatusSnapshot> snapshotsBySpaceId = findSnapshotsBySpaceId(spaces);
-        List<Integer> co2Values = spaces.stream()
-                .map(space -> findCo2Ppm(space, snapshotsBySpaceId))
+        Co2SnapshotContext context = loadCo2SnapshotContext(admin.getCampusId());
+        List<Integer> co2Values = context.spaces().stream()
+                .map(space -> findCo2Ppm(space, context.snapshotsBySpaceId()))
                 .filter(co2Ppm -> co2Ppm != null)
                 .toList();
 
-        List<String> activeNodeIds = nodeInstallationRepository
-                .findAllBySpace_Campus_IdAndActiveTrue(admin.getCampusId())
-                .stream()
-                .map(NodeInstallation::getNode)
-                .map(node -> node.getId())
-                .distinct()
-                .toList();
+        List<String> activeNodeIds = findActiveNodeIds(admin.getCampusId());
 
         return new AdminCo2AnalyticsResponse(
                 admin.getCampusId(),
                 admin.getCampus().getName(),
                 targetDate,
-                spaces.size(),
+                context.spaces().size(),
                 calculateAverage(co2Values),
-                buildVentilationSummary(spaces, snapshotsBySpaceId),
-                buildDistribution(spaces, snapshotsBySpaceId),
+                buildVentilationSummary(context.spaces(), context.snapshotsBySpaceId()),
+                buildDistribution(context.spaces(), context.snapshotsBySpaceId()),
                 readDailyTrend(activeNodeIds, targetDate),
                 readDailyTrend(activeNodeIds, targetDate.minusDays(1)),
-                buildTopSpaces(spaces, snapshotsBySpaceId)
+                buildTopSpaces(context.spaces(), context.snapshotsBySpaceId())
         );
+    }
+
+    public AdminCo2VentilationSummaryResponse getVentilationSummary(Long userId) {
+        User admin = adminAccessService.getApprovedAdmin(userId);
+        Co2SnapshotContext context = loadCo2SnapshotContext(admin.getCampusId());
+        return buildVentilationSummary(context.spaces(), context.snapshotsBySpaceId());
+    }
+
+    public List<AdminCo2DistributionItemResponse> getDistribution(Long userId) {
+        User admin = adminAccessService.getApprovedAdmin(userId);
+        Co2SnapshotContext context = loadCo2SnapshotContext(admin.getCampusId());
+        return buildDistribution(context.spaces(), context.snapshotsBySpaceId());
+    }
+
+    public List<AdminCo2TrendPointResponse> getTodayTrend(Long userId, LocalDate date) {
+        User admin = adminAccessService.getApprovedAdmin(userId);
+        LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
+        return readDailyTrend(findActiveNodeIds(admin.getCampusId()), targetDate);
+    }
+
+    private Co2SnapshotContext loadCo2SnapshotContext(Long campusId) {
+        List<Space> spaces = spaceRepository.findAllByCampus_IdAndDeletedAtIsNull(campusId);
+        return new Co2SnapshotContext(spaces, findSnapshotsBySpaceId(spaces));
+    }
+
+    private List<String> findActiveNodeIds(Long campusId) {
+        return nodeInstallationRepository
+                .findAllBySpace_Campus_IdAndActiveTrue(campusId)
+                .stream()
+                .map(NodeInstallation::getNode)
+                .map(node -> node.getId())
+                .distinct()
+                .toList();
     }
 
     private Map<Long, SpaceStatusSnapshot> findSnapshotsBySpaceId(List<Space> spaces) {
@@ -226,5 +252,11 @@ public class AdminCo2AnalyticsService {
             return 0;
         }
         return (int) Math.round(count * 100.0 / total);
+    }
+
+    private record Co2SnapshotContext(
+            List<Space> spaces,
+            Map<Long, SpaceStatusSnapshot> snapshotsBySpaceId
+    ) {
     }
 }

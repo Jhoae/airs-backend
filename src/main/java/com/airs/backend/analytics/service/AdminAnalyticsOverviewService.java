@@ -6,8 +6,9 @@ import com.airs.backend.analytics.dto.AdminAnalyticsInsightResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsOverviewMetricsResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsOverviewResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsStatusDistributionsResponse;
-import com.airs.backend.analytics.dto.AdminCo2AnalyticsResponse;
 import com.airs.backend.analytics.dto.AdminCo2DistributionItemResponse;
+import com.airs.backend.analytics.dto.AdminCo2TrendPointResponse;
+import com.airs.backend.analytics.dto.AdminCo2VentilationSummaryResponse;
 import com.airs.backend.location.entity.Space;
 import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.NodeInstallationRepository;
@@ -49,24 +50,62 @@ public class AdminAnalyticsOverviewService {
     private final SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
 
     public AdminAnalyticsOverviewResponse getOverview(Long userId, LocalDate date) {
+        OverviewSnapshotContext context = loadOverviewSnapshotContext(userId, date);
+        AdminCo2VentilationSummaryResponse ventilationSummary = adminCo2AnalyticsService.getVentilationSummary(userId);
+        List<AdminCo2DistributionItemResponse> co2Distribution = adminCo2AnalyticsService.getDistribution(userId);
+
+        return new AdminAnalyticsOverviewResponse(
+                context.admin().getCampusId(),
+                context.admin().getCampus().getName(),
+                context.targetDate(),
+                null,
+                buildMetrics(ventilationSummary, context.installations(), context.nodeStatusByNodeId()),
+                getCo2AverageTrend(userId, context.targetDate()),
+                buildStatusDistributions(
+                        co2Distribution,
+                        context.installations(),
+                        context.nodeStatusByNodeId(),
+                        context.spaceStatusBySpaceId()
+                ),
+                buildTopInsights(context.installations(), context.nodeStatusByNodeId(), context.spaceStatusBySpaceId())
+        );
+    }
+
+    public AdminAnalyticsOverviewMetricsResponse getMetrics(Long userId) {
+        OverviewSnapshotContext context = loadOverviewSnapshotContext(userId, null);
+        AdminCo2VentilationSummaryResponse ventilationSummary = adminCo2AnalyticsService.getVentilationSummary(userId);
+        return buildMetrics(ventilationSummary, context.installations(), context.nodeStatusByNodeId());
+    }
+
+    public List<AdminCo2TrendPointResponse> getCo2AverageTrend(Long userId, LocalDate date) {
+        return adminCo2AnalyticsService.getTodayTrend(userId, date);
+    }
+
+    public AdminAnalyticsStatusDistributionsResponse getStatusDistributions(Long userId) {
+        OverviewSnapshotContext context = loadOverviewSnapshotContext(userId, null);
+        List<AdminCo2DistributionItemResponse> co2Distribution = adminCo2AnalyticsService.getDistribution(userId);
+        return buildStatusDistributions(
+                co2Distribution,
+                context.installations(),
+                context.nodeStatusByNodeId(),
+                context.spaceStatusBySpaceId()
+        );
+    }
+
+    private OverviewSnapshotContext loadOverviewSnapshotContext(Long userId, LocalDate date) {
         User admin = adminAccessService.getApprovedAdmin(userId);
         LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
-        AdminCo2AnalyticsResponse co2Analytics = adminCo2AnalyticsService.getCo2Analytics(userId, targetDate);
-
         List<NodeInstallation> installations = nodeInstallationRepository
                 .findAllBySpace_Campus_IdAndActiveTrue(admin.getCampusId());
         Map<String, NodeStatusSnapshot> nodeStatusByNodeId = findNodeStatusByNodeId(installations);
         Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId = findSpaceStatusBySpaceId(installations);
 
-        return new AdminAnalyticsOverviewResponse(
-                admin.getCampusId(),
-                admin.getCampus().getName(),
+        return new OverviewSnapshotContext(
+                admin,
                 targetDate,
-                null,
-                buildMetrics(co2Analytics, installations, nodeStatusByNodeId),
-                co2Analytics.getTodayTrend(),
-                buildStatusDistributions(co2Analytics, installations, nodeStatusByNodeId, spaceStatusBySpaceId),
-                buildTopInsights(installations, nodeStatusByNodeId, spaceStatusBySpaceId)
+                installations,
+                nodeStatusByNodeId,
+                spaceStatusBySpaceId
         );
     }
 
@@ -106,7 +145,7 @@ public class AdminAnalyticsOverviewService {
     }
 
     private AdminAnalyticsOverviewMetricsResponse buildMetrics(
-            AdminCo2AnalyticsResponse co2Analytics,
+            AdminCo2VentilationSummaryResponse ventilationSummary,
             List<NodeInstallation> installations,
             Map<String, NodeStatusSnapshot> nodeStatusByNodeId
     ) {
@@ -118,8 +157,8 @@ public class AdminAnalyticsOverviewService {
 
         return new AdminAnalyticsOverviewMetricsResponse(
                 null,
-                co2Analytics.getVentilationSummary().getRecommendedCount(),
-                co2Analytics.getVentilationSummary().getNeededCount(),
+                ventilationSummary.getRecommendedCount(),
+                ventilationSummary.getNeededCount(),
                 null,
                 onlineNodeCount,
                 weakNodeCount,
@@ -131,13 +170,13 @@ public class AdminAnalyticsOverviewService {
     }
 
     private AdminAnalyticsStatusDistributionsResponse buildStatusDistributions(
-            AdminCo2AnalyticsResponse co2Analytics,
+            List<AdminCo2DistributionItemResponse> co2Distribution,
             List<NodeInstallation> installations,
             Map<String, NodeStatusSnapshot> nodeStatusByNodeId,
             Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId
     ) {
         return new AdminAnalyticsStatusDistributionsResponse(
-                toDistributionItems(co2Analytics.getDistribution()),
+                toDistributionItems(co2Distribution),
                 buildConnectionDistribution(installations, nodeStatusByNodeId),
                 buildOccupancyDistribution(installations, spaceStatusBySpaceId),
                 buildWifiDistribution(installations, nodeStatusByNodeId)
@@ -461,6 +500,15 @@ public class AdminAnalyticsOverviewService {
             AdminAnalyticsInsightResponse response,
             int priority,
             int score
+    ) {
+    }
+
+    private record OverviewSnapshotContext(
+            User admin,
+            LocalDate targetDate,
+            List<NodeInstallation> installations,
+            Map<String, NodeStatusSnapshot> nodeStatusByNodeId,
+            Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId
     ) {
     }
 }

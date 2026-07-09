@@ -3,6 +3,8 @@ package com.airs.backend.user.entity;
 import com.airs.backend.location.entity.Campus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -36,16 +38,29 @@ public class CampusAdmin {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(nullable = false)
-    private boolean approved;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private CampusAdminStatus status;
 
-    public CampusAdmin(Campus campus, User user, boolean approved) {
+    public CampusAdmin(Campus campus, User user, CampusAdminStatus status) {
         this.campus = campus;
         this.user = user;
-        this.approved = approved;
+        this.status = status;
+    }
+
+    public boolean isApproved() {
+        return status == CampusAdminStatus.APPROVED;
+    }
+
+    public boolean isPending() {
+        return status == CampusAdminStatus.PENDING;
     }
 
     public void approve() {
-        this.approved = true;
+        this.status = CampusAdminStatus.APPROVED;
+    }
+
+    public void reject() {
+        this.status = CampusAdminStatus.REJECTED;
     }
 }

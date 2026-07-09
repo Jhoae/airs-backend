@@ -126,12 +126,36 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /airs/admin/admins/pending:
+    get:
+      tags:
+        - Admin Approval
+      summary: 관리자 승인 대기 목록 조회
+      description: 승인된 ROOT_ADMIN이 같은 캠퍼스에서 ADMIN으로 가입했지만 아직 승인되지 않은 사용자 목록을 조회합니다.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 관리자 승인 대기 목록 조회 성공
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminPendingApprovalResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /airs/admin/admins/{userId}/approve:
     patch:
       tags:
         - Admin Approval
       summary: ADMIN 승인
-      description: 승인된 ROOT_ADMIN이 같은 캠퍼스의 미승인 ADMIN을 승인합니다. 이미 승인된 ADMIN이면 같은 응답을 200 OK로 반환합니다.
+      description: 승인된 ROOT_ADMIN이 같은 캠퍼스의 PENDING ADMIN 신청을 승인합니다. 이미 승인된 ADMIN이면 같은 응답을 200 OK로 반환하고, 이미 거절된 신청이면 409 Conflict를 반환합니다.
       security:
         - bearerAuth: []
       parameters:
@@ -151,6 +175,36 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /airs/admin/admins/{userId}/reject:
+    patch:
+      tags:
+        - Admin Approval
+      summary: ADMIN 신청 거절
+      description: 승인된 ROOT_ADMIN이 같은 캠퍼스의 PENDING ADMIN 신청을 거절합니다. 이미 거절된 신청이면 같은 응답을 200 OK로 반환하고, 이미 승인된 ADMIN이면 409 Conflict를 반환합니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: ADMIN 신청 거절 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminApprovalResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /airs/admin/campuses:
     post:
@@ -467,7 +521,7 @@ paths:
       tags:
         - Admin Analytics
       summary: 관리자 분석 요약 조회
-      description: 분석 요약 화면의 전체 요약 탭을 위한 API입니다. AI 요약, comfort score, 냉방 낭비처럼 아직 기준이 확정되지 않은 값은 null로 반환합니다.
+      description: 분석 요약 화면의 전체 요약 탭을 한 번에 조회하는 호환용 API입니다. 화면 초기 로딩 속도가 중요하면 섹션별 API 사용을 권장합니다.
       security:
         - bearerAuth: []
       parameters:
@@ -488,6 +542,79 @@ paths:
                 $ref: '#/components/schemas/AdminAnalyticsOverviewResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /airs/admin/analytics/overview/metrics:
+    get:
+      tags:
+        - Admin Analytics
+      summary: 관리자 분석 요약 핵심 지표 조회
+      description: 분석 요약 화면의 핵심 지표 카드만 빠르게 조회합니다. InfluxDB 시간대별 추이 조회는 수행하지 않습니다.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 핵심 지표 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAnalyticsOverviewMetricsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /airs/admin/analytics/overview/co2-average-trend:
+    get:
+      tags:
+        - Admin Analytics
+      summary: 관리자 분석 요약 시간대별 CO2 평균 추이 조회
+      description: 분석 요약 화면의 시간대별 CO2 평균 추이 그래프만 조회합니다. 조회 기준 날짜의 active 노드 CO2 평균을 1시간 단위로 반환합니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 조회 기준 날짜입니다. 생략하면 서버 기준 오늘 날짜를 사용합니다.
+          schema:
+            type: string
+            format: date
+            example: '2026-07-07'
+      responses:
+        '200':
+          description: 시간대별 CO2 평균 추이 조회 성공
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminCo2TrendPointResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /airs/admin/analytics/overview/status-distributions:
+    get:
+      tags:
+        - Admin Analytics
+      summary: 관리자 분석 요약 상태 분포 조회
+      description: 분석 요약 화면의 CO2, 연결, 재실, Wi-Fi 상태 분포만 빠르게 조회합니다. InfluxDB 시간대별 추이 조회는 수행하지 않습니다.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 상태 분포 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAnalyticsStatusDistributionsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -675,6 +802,12 @@ components:
         - USER
         - ADMIN
         - ROOT_ADMIN
+    CampusAdminStatus:
+      type: string
+      enum:
+        - PENDING
+        - APPROVED
+        - REJECTED
     ConnectionStatus:
       type: string
       enum:
@@ -700,6 +833,7 @@ components:
       type: string
       enum:
         - VENTILATION_RECOMMENDED
+        - HVAC_WASTE_SUSPECTED
         - NODE_OFFLINE
         - WEAK_WIFI
         - SENSOR_ABNORMAL
@@ -851,6 +985,40 @@ components:
         adminApproved:
           type: boolean
           example: true
+        adminStatus:
+          $ref: '#/components/schemas/CampusAdminStatus'
+    AdminPendingApprovalResponse:
+      type: object
+      properties:
+        userId:
+          type: integer
+          format: int64
+          example: 2
+        campusId:
+          type: integer
+          format: int64
+          example: 1
+        email:
+          type: string
+          example: admin-candidate@example.com
+        nickname:
+          type: string
+          example: 관리자후보
+        phone:
+          type: string
+          nullable: true
+          example: '01012345678'
+        role:
+          $ref: '#/components/schemas/UserRole'
+        adminApproved:
+          type: boolean
+          example: false
+        adminStatus:
+          $ref: '#/components/schemas/CampusAdminStatus'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-07-09T14:20:00'
 
     CampusResponse:
       type: object

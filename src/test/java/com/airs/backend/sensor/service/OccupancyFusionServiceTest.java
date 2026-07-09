@@ -14,9 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class OccupancyFusionServiceTest {
 
     @Test
-    void resolve_should_return_present_when_pir_or_mmwave_detects_presence() {
+    void resolve_should_return_present_when_mmwave_detects_presence() {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
-        Dht22Payload payload = payload(Instant.parse("2026-07-07T00:00:00Z"), 1, 0);
+        Dht22Payload payload = payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 1);
 
         OccupancyFusionResult result = service.resolve("node_01", payload);
 
@@ -29,9 +29,44 @@ class OccupancyFusionServiceTest {
     }
 
     @Test
-    void resolve_should_keep_present_until_stale_after_minutes() {
+    void resolve_should_ignore_single_pir_detection_before_it_is_confirmed() {
+        OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
+
+        OccupancyFusionResult result = service.resolve(
+                "node_01",
+                payload(Instant.parse("2026-07-07T00:00:00Z"), 1, 0)
+        );
+
+        assertEquals(TelemetryOccupancyState.UNKNOWN, result.state());
+        assertNull(result.humanDetected());
+        assertEquals(OccupancyStatus.UNKNOWN, result.occupancyStatus());
+        assertNull(result.occupancyPresent());
+        assertNull(result.minutesSinceMotion());
+        assertEquals(true, result.sourcePresent());
+    }
+
+    @Test
+    void resolve_should_return_present_when_pir_is_detected_twice_in_a_row() {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
         service.resolve("node_01", payload(Instant.parse("2026-07-07T00:00:00Z"), 1, 0));
+
+        OccupancyFusionResult result = service.resolve(
+                "node_01",
+                payload(Instant.parse("2026-07-07T00:00:05Z"), 1, 0)
+        );
+
+        assertEquals(TelemetryOccupancyState.PRESENT, result.state());
+        assertEquals(true, result.humanDetected());
+        assertEquals(OccupancyStatus.OCCUPIED, result.occupancyStatus());
+        assertEquals(1, result.occupancyPresent());
+        assertEquals(0.0, result.minutesSinceMotion());
+        assertEquals(true, result.sourcePresent());
+    }
+
+    @Test
+    void resolve_should_keep_present_until_stale_after_minutes() {
+        OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
+        service.resolve("node_01", payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 1));
 
         OccupancyFusionResult result = service.resolve(
                 "node_01",
@@ -47,7 +82,7 @@ class OccupancyFusionServiceTest {
     @Test
     void resolve_should_return_absent_after_stale_after_minutes() {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
-        service.resolve("node_01", payload(Instant.parse("2026-07-07T00:00:00Z"), 1, 0));
+        service.resolve("node_01", payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 1));
 
         OccupancyFusionResult result = service.resolve(
                 "node_01",

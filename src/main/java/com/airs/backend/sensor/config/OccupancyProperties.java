@@ -12,5 +12,6 @@ import org.springframework.stereotype.Component;
 public class OccupancyProperties {
 
     private double staleAfterMinutes = 10.0;
+    private double co2RiseThresholdPpm = 40.0;
     private boolean influxWriteEnabled = false;
 }

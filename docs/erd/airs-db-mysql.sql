@@ -71,7 +71,7 @@ CREATE TABLE campus_admins (
   id BIGINT NOT NULL AUTO_INCREMENT,
   campus_id BIGINT NOT NULL,
   user_id BIGINT NOT NULL,
-  approved BOOLEAN NOT NULL,
+  status VARCHAR(20) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_campus_admins_campus_user (campus_id, user_id),
   CONSTRAINT fk_campus_admins_campus
@@ -157,7 +157,7 @@ CREATE TABLE alerts (
   campus_id BIGINT NOT NULL,
   space_id BIGINT NULL,
   node_id VARCHAR(80) NULL,
-  alert_type ENUM('INFO','NODE_OFFLINE','SENSOR_ABNORMAL','VENTILATION_RECOMMENDED','WEAK_WIFI') NOT NULL,
+  alert_type VARCHAR(60) NOT NULL,
   severity ENUM('EMERGENCY','INFO','WARNING') NOT NULL,
   status ENUM('ACTIVE','RESOLVED') NOT NULL,
   audience ENUM('ADMIN','ALL','USER') NOT NULL,

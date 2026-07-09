@@ -29,6 +29,7 @@ import com.airs.backend.node.repository.NodeInstallationRepository;
 import com.airs.backend.sensor.dto.DailyDht22SummaryResponse;
 import com.airs.backend.sensor.influx.InfluxDht22Reader;
 import com.airs.backend.user.entity.CampusAdmin;
+import com.airs.backend.user.entity.CampusAdminStatus;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserRole;
 import com.airs.backend.user.repository.CampusAdminRepository;
@@ -65,7 +66,7 @@ class Dht22SummaryServiceTest {
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(nodeInstallationRepository.findByNode_IdAndActiveTrue("node_01")).thenReturn(Optional.of(installation));
-        when(campusAdminRepository.findByUser_Id(1L)).thenReturn(Optional.of(new CampusAdmin(campus, user, true)));
+        when(campusAdminRepository.findByUser_Id(1L)).thenReturn(Optional.of(new CampusAdmin(campus, user, CampusAdminStatus.APPROVED)));
         when(influxDht22Reader.readDailySummary("node_01", date)).thenReturn(expected);
 
         DailyDht22SummaryResponse actual = dht22SummaryService.getDailySummary(1L, "node_01", date);
