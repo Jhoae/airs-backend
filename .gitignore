@@ -56,4 +56,4 @@ src/test/*
 !src/test/java/com/airs/backend/
 src/test/java/com/airs/backend/*
 !src/test/java/com/airs/backend/flyway/
-!src/test/java/com/airs/backend/flyway/FlywayBaselineMySqlTest.java
+!src/test/java/com/airs/backend/flyway/*.java

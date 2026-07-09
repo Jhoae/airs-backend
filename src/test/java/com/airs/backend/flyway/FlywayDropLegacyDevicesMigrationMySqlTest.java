@@ -14,40 +14,37 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
-class FlywayBaselineMySqlTest {
+class FlywayDropLegacyDevicesMigrationMySqlTest {
 
 	@Container
 	static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4")
-		.withDatabaseName("airs_baseline_test")
+		.withDatabaseName("airs_drop_devices_test")
 		.withUsername("test")
 		.withPassword("test");
 
 	@Test
-	void baselineExistingSchemaAndApplyNextMigration() throws Exception {
+	void dropLegacyDevicesTableAfterBaseline() throws Exception {
 		try (Connection connection = getConnection();
 			 Statement statement = connection.createStatement()) {
 			statement.execute("""
-				CREATE TABLE users (
-					id BIGINT PRIMARY KEY,
-					email VARCHAR(50) NOT NULL
+				CREATE TABLE devices (
+					node_id VARCHAR(100) PRIMARY KEY
 				)
 				""");
-			statement.execute("INSERT INTO users (id, email) VALUES (1, 'existing@airs.test')");
 		}
 
 		Flyway flyway = Flyway.configure()
 			.dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
 			.baselineOnMigrate(true)
 			.baselineVersion("1")
-			.locations("classpath:flyway-baseline-test")
+			.locations("classpath:db/migration")
 			.load();
 
 		flyway.migrate();
 
 		try (Connection connection = getConnection();
 			 Statement statement = connection.createStatement()) {
-			assertThat(countRows(statement, "users")).isEqualTo(1);
-			assertThat(countRows(statement, "flyway_probe")).isEqualTo(1);
+			assertThat(tableExists(statement, "devices")).isFalse();
 			assertThat(countFlywayHistory(statement, "1", "BASELINE")).isEqualTo(1);
 			assertThat(countFlywayHistory(statement, "2", "SQL")).isEqualTo(1);
 		}
@@ -57,10 +54,9 @@ class FlywayBaselineMySqlTest {
 		return DriverManager.getConnection(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
 	}
 
-	private static int countRows(Statement statement, String tableName) throws Exception {
-		try (ResultSet resultSet = statement.executeQuery("SELECT COUNT(*) FROM " + tableName)) {
-			resultSet.next();
-			return resultSet.getInt(1);
+	private static boolean tableExists(Statement statement, String tableName) throws Exception {
+		try (ResultSet resultSet = statement.executeQuery("SHOW TABLES LIKE '%s'".formatted(tableName))) {
+			return resultSet.next();
 		}
 	}
 
