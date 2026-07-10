@@ -10,6 +10,7 @@ import com.airs.backend.analytics.dto.AdminCo2DistributionItemResponse;
 import com.airs.backend.analytics.dto.AdminCo2TrendPointResponse;
 import com.airs.backend.analytics.dto.AdminCo2VentilationSummaryResponse;
 import com.airs.backend.location.entity.Space;
+import com.airs.backend.location.repository.SpaceRepository;
 import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.NodeInstallationRepository;
 import com.airs.backend.status.entity.ConnectionStatus;
@@ -45,6 +46,7 @@ public class AdminAnalyticsOverviewService {
 
     private final AdminAccessService adminAccessService;
     private final AdminCo2AnalyticsService adminCo2AnalyticsService;
+    private final SpaceRepository spaceRepository;
     private final NodeInstallationRepository nodeInstallationRepository;
     private final NodeStatusSnapshotRepository nodeStatusSnapshotRepository;
     private final SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
@@ -63,6 +65,7 @@ public class AdminAnalyticsOverviewService {
                 getCo2AverageTrend(userId, context.targetDate()),
                 buildStatusDistributions(
                         co2Distribution,
+                        context.spaces(),
                         context.installations(),
                         context.nodeStatusByNodeId(),
                         context.spaceStatusBySpaceId()
@@ -86,6 +89,7 @@ public class AdminAnalyticsOverviewService {
         List<AdminCo2DistributionItemResponse> co2Distribution = adminCo2AnalyticsService.getDistribution(userId);
         return buildStatusDistributions(
                 co2Distribution,
+                context.spaces(),
                 context.installations(),
                 context.nodeStatusByNodeId(),
                 context.spaceStatusBySpaceId()
@@ -97,12 +101,14 @@ public class AdminAnalyticsOverviewService {
         LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
         List<NodeInstallation> installations = nodeInstallationRepository
                 .findAllBySpace_Campus_IdAndActiveTrue(admin.getCampusId());
+        List<Space> spaces = spaceRepository.findAllByCampus_IdAndDeletedAtIsNull(admin.getCampusId());
         Map<String, NodeStatusSnapshot> nodeStatusByNodeId = findNodeStatusByNodeId(installations);
-        Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId = findSpaceStatusBySpaceId(installations);
+        Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId = findSpaceStatusBySpaceId(spaces);
 
         return new OverviewSnapshotContext(
                 admin,
                 targetDate,
+                spaces,
                 installations,
                 nodeStatusByNodeId,
                 spaceStatusBySpaceId
@@ -126,10 +132,9 @@ public class AdminAnalyticsOverviewService {
                 ));
     }
 
-    private Map<Long, SpaceStatusSnapshot> findSpaceStatusBySpaceId(List<NodeInstallation> installations) {
-        List<Long> spaceIds = installations.stream()
-                .map(installation -> installation.getSpace().getId())
-                .distinct()
+    private Map<Long, SpaceStatusSnapshot> findSpaceStatusBySpaceId(List<Space> spaces) {
+        List<Long> spaceIds = spaces.stream()
+                .map(Space::getId)
                 .toList();
 
         if (spaceIds.isEmpty()) {
@@ -171,6 +176,7 @@ public class AdminAnalyticsOverviewService {
 
     private AdminAnalyticsStatusDistributionsResponse buildStatusDistributions(
             List<AdminCo2DistributionItemResponse> co2Distribution,
+            List<Space> spaces,
             List<NodeInstallation> installations,
             Map<String, NodeStatusSnapshot> nodeStatusByNodeId,
             Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId
@@ -178,7 +184,7 @@ public class AdminAnalyticsOverviewService {
         return new AdminAnalyticsStatusDistributionsResponse(
                 toDistributionItems(co2Distribution),
                 buildConnectionDistribution(installations, nodeStatusByNodeId),
-                buildOccupancyDistribution(installations, spaceStatusBySpaceId),
+                buildOccupancyDistribution(spaces, spaceStatusBySpaceId),
                 buildWifiDistribution(installations, nodeStatusByNodeId)
         );
     }
@@ -192,7 +198,9 @@ public class AdminAnalyticsOverviewService {
                         item.getLabel(),
                         item.getRangeLabel(),
                         item.getCount(),
-                        item.getPercent()
+                        item.getPercent(),
+                        item.getUnit(),
+                        item.getTotalCount()
                 ))
                 .toList();
     }
@@ -208,28 +216,24 @@ public class AdminAnalyticsOverviewService {
             counts.put(level, counts.get(level) + 1);
         }
 
-        return toDistributionItems(counts, installations.size());
+        return toDistributionItems(counts, installations.size(), "NODE");
     }
 
     private List<AdminAnalyticsDistributionItemResponse> buildOccupancyDistribution(
-            List<NodeInstallation> installations,
+            List<Space> spaces,
             Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId
     ) {
         EnumMap<OccupancyLevel, Integer> counts = initCounts(OccupancyLevel.class);
-        List<Long> spaceIds = installations.stream()
-                .map(installation -> installation.getSpace().getId())
-                .distinct()
-                .toList();
 
-        for (Long spaceId : spaceIds) {
-            SpaceStatusSnapshot snapshot = spaceStatusBySpaceId.get(spaceId);
+        for (Space space : spaces) {
+            SpaceStatusSnapshot snapshot = spaceStatusBySpaceId.get(space.getId());
             OccupancyLevel level = snapshot == null
                     ? OccupancyLevel.NO_DATA
                     : OccupancyLevel.from(snapshot.getOccupancyStatus());
             counts.put(level, counts.get(level) + 1);
         }
 
-        return toDistributionItems(counts, spaceIds.size());
+        return toDistributionItems(counts, spaces.size(), "SPACE");
     }
 
     private List<AdminAnalyticsDistributionItemResponse> buildWifiDistribution(
@@ -244,7 +248,7 @@ public class AdminAnalyticsOverviewService {
             counts.put(level, counts.get(level) + 1);
         }
 
-        return toDistributionItems(counts, installations.size());
+        return toDistributionItems(counts, installations.size(), "NODE");
     }
 
     private List<AdminAnalyticsInsightResponse> buildTopInsights(
@@ -393,7 +397,8 @@ public class AdminAnalyticsOverviewService {
 
     private <T extends Enum<T> & DistributionLevel> List<AdminAnalyticsDistributionItemResponse> toDistributionItems(
             EnumMap<T, Integer> counts,
-            int total
+            int total,
+            String unit
     ) {
         return counts.keySet()
                 .stream()
@@ -402,7 +407,9 @@ public class AdminAnalyticsOverviewService {
                         level.getLabel(),
                         level.getRangeLabel(),
                         counts.get(level),
-                        percent(counts.get(level), total)
+                        percent(counts.get(level), total),
+                        unit,
+                        total
                 ))
                 .toList();
     }
@@ -506,6 +513,7 @@ public class AdminAnalyticsOverviewService {
     private record OverviewSnapshotContext(
             User admin,
             LocalDate targetDate,
+            List<Space> spaces,
             List<NodeInstallation> installations,
             Map<String, NodeStatusSnapshot> nodeStatusByNodeId,
             Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId

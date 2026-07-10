@@ -2,9 +2,13 @@ package com.airs.backend.analytics.service;
 
 import com.airs.backend.admin.service.AdminAccessService;
 import com.airs.backend.analytics.dto.AdminCo2AnalyticsResponse;
+import com.airs.backend.analytics.dto.AdminCo2DistributionResponse;
 import com.airs.backend.analytics.dto.AdminCo2DistributionItemResponse;
+import com.airs.backend.analytics.dto.AdminCo2SummaryResponse;
 import com.airs.backend.analytics.dto.AdminCo2TopSpaceResponse;
+import com.airs.backend.analytics.dto.AdminCo2TopSpacesResponse;
 import com.airs.backend.analytics.dto.AdminCo2TrendPointResponse;
+import com.airs.backend.analytics.dto.AdminCo2TrendResponse;
 import com.airs.backend.analytics.dto.AdminCo2VentilationSummaryResponse;
 import com.airs.backend.location.entity.Space;
 import com.airs.backend.location.repository.SpaceRepository;
@@ -71,6 +75,65 @@ public class AdminCo2AnalyticsService {
         );
     }
 
+    public AdminCo2SummaryResponse getSummary(Long userId, LocalDate date) {
+        User admin = adminAccessService.getApprovedAdmin(userId);
+        LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
+        Co2SnapshotContext context = loadCo2SnapshotContext(admin.getCampusId());
+        List<Integer> co2Values = findCo2Values(context);
+
+        return new AdminCo2SummaryResponse(
+                admin.getCampusId(),
+                admin.getCampus().getName(),
+                targetDate,
+                context.spaces().size(),
+                calculateAverage(co2Values),
+                buildVentilationSummary(context.spaces(), context.snapshotsBySpaceId())
+        );
+    }
+
+    public AdminCo2DistributionResponse getDistributionSection(Long userId, LocalDate date) {
+        User admin = adminAccessService.getApprovedAdmin(userId);
+        LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
+        Co2SnapshotContext context = loadCo2SnapshotContext(admin.getCampusId());
+        List<Integer> co2Values = findCo2Values(context);
+
+        return new AdminCo2DistributionResponse(
+                admin.getCampusId(),
+                admin.getCampus().getName(),
+                targetDate,
+                context.spaces().size(),
+                calculateAverage(co2Values),
+                buildDistribution(context.spaces(), context.snapshotsBySpaceId())
+        );
+    }
+
+    public AdminCo2TrendResponse getTrendSection(Long userId, LocalDate date) {
+        User admin = adminAccessService.getApprovedAdmin(userId);
+        LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
+        List<String> activeNodeIds = findActiveNodeIds(admin.getCampusId());
+
+        return new AdminCo2TrendResponse(
+                admin.getCampusId(),
+                admin.getCampus().getName(),
+                targetDate,
+                readDailyTrend(activeNodeIds, targetDate),
+                readDailyTrend(activeNodeIds, targetDate.minusDays(1))
+        );
+    }
+
+    public AdminCo2TopSpacesResponse getTopSpacesSection(Long userId, LocalDate date) {
+        User admin = adminAccessService.getApprovedAdmin(userId);
+        LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
+        Co2SnapshotContext context = loadCo2SnapshotContext(admin.getCampusId());
+
+        return new AdminCo2TopSpacesResponse(
+                admin.getCampusId(),
+                admin.getCampus().getName(),
+                targetDate,
+                buildTopSpaces(context.spaces(), context.snapshotsBySpaceId())
+        );
+    }
+
     public AdminCo2VentilationSummaryResponse getVentilationSummary(Long userId) {
         User admin = adminAccessService.getApprovedAdmin(userId);
         Co2SnapshotContext context = loadCo2SnapshotContext(admin.getCampusId());
@@ -101,6 +164,13 @@ public class AdminCo2AnalyticsService {
                 .map(NodeInstallation::getNode)
                 .map(node -> node.getId())
                 .distinct()
+                .toList();
+    }
+
+    private List<Integer> findCo2Values(Co2SnapshotContext context) {
+        return context.spaces().stream()
+                .map(space -> findCo2Ppm(space, context.snapshotsBySpaceId()))
+                .filter(co2Ppm -> co2Ppm != null)
                 .toList();
     }
 
@@ -169,7 +239,9 @@ public class AdminCo2AnalyticsService {
                         level.getLabel(),
                         level.getRangeLabel(),
                         counts.get(level),
-                        percent(counts.get(level), total)
+                        percent(counts.get(level), total),
+                        "SPACE",
+                        total
                 ))
                 .toList();
     }

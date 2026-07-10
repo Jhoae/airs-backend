@@ -4,7 +4,11 @@ import com.airs.backend.analytics.dto.AdminCo2AnalyticsResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsOverviewMetricsResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsOverviewResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsStatusDistributionsResponse;
+import com.airs.backend.analytics.dto.AdminCo2DistributionResponse;
+import com.airs.backend.analytics.dto.AdminCo2SummaryResponse;
+import com.airs.backend.analytics.dto.AdminCo2TopSpacesResponse;
 import com.airs.backend.analytics.dto.AdminCo2TrendPointResponse;
+import com.airs.backend.analytics.dto.AdminCo2TrendResponse;
 import com.airs.backend.analytics.service.AdminAnalyticsOverviewService;
 import com.airs.backend.analytics.service.AdminCo2AnalyticsService;
 import com.airs.backend.global.jwt.CurrentUserPrincipal;
@@ -78,6 +82,54 @@ public class AdminAnalyticsController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
     ) {
         AdminCo2AnalyticsResponse response = adminCo2AnalyticsService.getCo2Analytics(
+                currentUser.getUserId(),
+                date
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/co2/summary")
+    public ResponseEntity<AdminCo2SummaryResponse> getCo2Summary(
+            @AuthenticationPrincipal CurrentUserPrincipal currentUser,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        AdminCo2SummaryResponse response = adminCo2AnalyticsService.getSummary(
+                currentUser.getUserId(),
+                date
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/co2/distribution")
+    public ResponseEntity<AdminCo2DistributionResponse> getCo2Distribution(
+            @AuthenticationPrincipal CurrentUserPrincipal currentUser,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        AdminCo2DistributionResponse response = adminCo2AnalyticsService.getDistributionSection(
+                currentUser.getUserId(),
+                date
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/co2/trend")
+    public ResponseEntity<AdminCo2TrendResponse> getCo2Trend(
+            @AuthenticationPrincipal CurrentUserPrincipal currentUser,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        AdminCo2TrendResponse response = adminCo2AnalyticsService.getTrendSection(
+                currentUser.getUserId(),
+                date
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/co2/top-spaces")
+    public ResponseEntity<AdminCo2TopSpacesResponse> getCo2TopSpaces(
+            @AuthenticationPrincipal CurrentUserPrincipal currentUser,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        AdminCo2TopSpacesResponse response = adminCo2AnalyticsService.getTopSpacesSection(
                 currentUser.getUserId(),
                 date
         );

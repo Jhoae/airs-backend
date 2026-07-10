@@ -3,6 +3,11 @@ info:
   title: AIRS Backend API
   version: v2
   description: AIRS backend API definition for mobile/admin app, sensor ingestion query, and internal AI query.
+servers:
+  - url: https://sogang-airs.iptime.org
+    description: Production API via Caddy HTTPS reverse proxy
+  - url: http://localhost:8080
+    description: Local development API
 tags:
   - name: Auth
     description: 회원가입 및 로그인 API
@@ -490,7 +495,7 @@ paths:
       tags:
         - Admin Analytics
       summary: 관리자 환기/CO2 분석 조회
-      description: 환기/CO2 분석 화면의 CO2 현황 탭을 위한 API입니다. 현재 공간별 상태는 MySQL snapshot에서, 시간대별 평균 추이는 InfluxDB co2_ppm에서 조회합니다.
+      description: 환기/CO2 분석 화면의 CO2 현황 탭을 한 번에 조회하는 호환용 API입니다. 화면 초기 로딩 속도가 중요하면 섹션별 API 사용을 권장합니다.
       security:
         - bearerAuth: []
       parameters:
@@ -509,6 +514,130 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminCo2AnalyticsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /airs/admin/analytics/co2/summary:
+    get:
+      tags:
+        - Admin Analytics
+      summary: 관리자 환기/CO2 요약 카드 조회
+      description: 환기/CO2 분석 화면 상단의 환기 양호, 환기 권장, 환기 필요, 데이터 없음 카드만 빠르게 조회합니다. InfluxDB 시간대별 추이 조회는 수행하지 않습니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 조회 기준 날짜입니다. 생략하면 서버 기준 오늘 날짜를 사용합니다.
+          schema:
+            type: string
+            format: date
+            example: '2026-07-07'
+      responses:
+        '200':
+          description: 환기/CO2 요약 카드 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCo2SummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /airs/admin/analytics/co2/distribution:
+    get:
+      tags:
+        - Admin Analytics
+      summary: 관리자 CO2 평균 농도 분포 조회
+      description: 환기/CO2 분석 화면의 CO2 평균 농도 분포만 빠르게 조회합니다. 응답 항목의 unit은 SPACE이며 totalCount는 분모로 사용한 전체 공간 수입니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 조회 기준 날짜입니다. 생략하면 서버 기준 오늘 날짜를 사용합니다.
+          schema:
+            type: string
+            format: date
+            example: '2026-07-07'
+      responses:
+        '200':
+          description: CO2 평균 농도 분포 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCo2DistributionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /airs/admin/analytics/co2/trend:
+    get:
+      tags:
+        - Admin Analytics
+      summary: 관리자 환기/CO2 시간대별 평균 추이 조회
+      description: 환기/CO2 분석 화면의 오늘/어제 CO2 평균 추이 그래프만 조회합니다. todayTrend와 yesterdayTrend는 각각 배열로 반환합니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 조회 기준 날짜입니다. 생략하면 서버 기준 오늘 날짜를 사용합니다.
+          schema:
+            type: string
+            format: date
+            example: '2026-07-07'
+      responses:
+        '200':
+          description: 환기/CO2 시간대별 평균 추이 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCo2TrendResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /airs/admin/analytics/co2/top-spaces:
+    get:
+      tags:
+        - Admin Analytics
+      summary: 관리자 CO2 Top 5 공간 조회
+      description: 환기/CO2 분석 화면의 CO2 Top 5 공간 목록만 빠르게 조회합니다. InfluxDB 시간대별 추이 조회는 수행하지 않습니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 조회 기준 날짜입니다. 생략하면 서버 기준 오늘 날짜를 사용합니다.
+          schema:
+            type: string
+            format: date
+            example: '2026-07-07'
+      responses:
+        '200':
+          description: CO2 Top 5 공간 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCo2TopSpacesResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -605,7 +734,7 @@ paths:
       tags:
         - Admin Analytics
       summary: 관리자 분석 요약 상태 분포 조회
-      description: 분석 요약 화면의 CO2, 연결, 재실, Wi-Fi 상태 분포만 빠르게 조회합니다. InfluxDB 시간대별 추이 조회는 수행하지 않습니다.
+      description: 분석 요약 화면의 CO2, 연결, 재실, Wi-Fi 상태 분포만 빠르게 조회합니다. CO2/재실은 공간 기준, 연결/Wi-Fi는 노드 기준이며 각 항목의 unit과 totalCount를 함께 반환합니다. InfluxDB 시간대별 추이 조회는 수행하지 않습니다.
       security:
         - bearerAuth: []
       responses:
@@ -1457,6 +1586,92 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminCo2TopSpaceResponse'
+    AdminCo2SummaryResponse:
+      type: object
+      properties:
+        campusId:
+          type: integer
+          format: int64
+        campusName:
+          type: string
+          example: 서강대학교
+        date:
+          type: string
+          format: date
+          example: '2026-07-07'
+        totalSpaceCount:
+          type: integer
+          example: 25
+        averageCo2Ppm:
+          type: integer
+          nullable: true
+          example: 842
+        ventilationSummary:
+          $ref: '#/components/schemas/AdminCo2VentilationSummaryResponse'
+    AdminCo2DistributionResponse:
+      type: object
+      properties:
+        campusId:
+          type: integer
+          format: int64
+        campusName:
+          type: string
+          example: 서강대학교
+        date:
+          type: string
+          format: date
+          example: '2026-07-07'
+        totalSpaceCount:
+          type: integer
+          example: 25
+        averageCo2Ppm:
+          type: integer
+          nullable: true
+          example: 842
+        distribution:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCo2DistributionItemResponse'
+    AdminCo2TrendResponse:
+      type: object
+      properties:
+        campusId:
+          type: integer
+          format: int64
+        campusName:
+          type: string
+          example: 서강대학교
+        date:
+          type: string
+          format: date
+          example: '2026-07-07'
+        todayTrend:
+          type: array
+          description: 조회 기준 날짜의 시간대별 CO2 평균 배열입니다.
+          items:
+            $ref: '#/components/schemas/AdminCo2TrendPointResponse'
+        yesterdayTrend:
+          type: array
+          description: 조회 기준 날짜 하루 전의 시간대별 CO2 평균 배열입니다.
+          items:
+            $ref: '#/components/schemas/AdminCo2TrendPointResponse'
+    AdminCo2TopSpacesResponse:
+      type: object
+      properties:
+        campusId:
+          type: integer
+          format: int64
+        campusName:
+          type: string
+          example: 서강대학교
+        date:
+          type: string
+          format: date
+          example: '2026-07-07'
+        topSpaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCo2TopSpaceResponse'
     AdminCo2VentilationSummaryResponse:
       type: object
       properties:
@@ -1508,6 +1723,16 @@ components:
         percent:
           type: integer
           example: 42
+        unit:
+          type: string
+          enum:
+            - SPACE
+          description: 이 분포의 집계 기준입니다. CO2 분포는 공간 기준입니다.
+          example: SPACE
+        totalCount:
+          type: integer
+          description: percent 계산에 사용한 분모입니다.
+          example: 25
     AdminCo2TrendPointResponse:
       type: object
       properties:
@@ -1661,6 +1886,17 @@ components:
         percent:
           type: integer
           example: 16
+        unit:
+          type: string
+          enum:
+            - SPACE
+            - NODE
+          description: 이 분포의 집계 기준입니다. CO2/재실은 SPACE, 연결/Wi-Fi는 NODE를 사용합니다.
+          example: SPACE
+        totalCount:
+          type: integer
+          description: percent 계산에 사용한 분모입니다.
+          example: 25
     AdminAnalyticsInsightResponse:
       type: object
       properties:

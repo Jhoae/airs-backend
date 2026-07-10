@@ -12,4 +12,6 @@ public class AdminCo2DistributionItemResponse {
     private String rangeLabel;
     private int count;
     private int percent;
+    private String unit;
+    private int totalCount;
 }
