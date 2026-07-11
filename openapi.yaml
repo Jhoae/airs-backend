@@ -4,7 +4,7 @@ info:
   version: v2
   description: AIRS backend API definition for mobile/admin app, sensor ingestion query, and internal AI query.
 servers:
-  - url: https://sogang-airs.iptime.org
+  - url: https://airs.bibnear.cloud
     description: Production API via Caddy HTTPS reverse proxy
   - url: http://localhost:8080
     description: Local development API
@@ -607,6 +607,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminCo2TrendResponse'
+              example:
+                campusId: 1
+                campusName: 서강대학교
+                date: '2026-07-07'
+                todayTrend:
+                  - timestamp: '2026-07-07T00:00:00Z'
+                    co2Ppm: 612
+                  - timestamp: '2026-07-07T01:00:00Z'
+                    co2Ppm: 680
+                  - timestamp: '2026-07-07T02:00:00Z'
+                    co2Ppm: 842
+                yesterdayTrend:
+                  - timestamp: '2026-07-06T00:00:00Z'
+                    co2Ppm: 590
+                  - timestamp: '2026-07-06T01:00:00Z'
+                    co2Ppm: 640
+                  - timestamp: '2026-07-06T02:00:00Z'
+                    co2Ppm: 700
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

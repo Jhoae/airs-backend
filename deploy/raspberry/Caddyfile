@@ -1,0 +1,11 @@
+airs.bibnear.cloud {
+    handle /airs/* {
+        reverse_proxy spring:8080
+    }
+
+    handle {
+        root * /srv/mobile-web
+        try_files {path} /index.html
+        file_server
+    }
+}

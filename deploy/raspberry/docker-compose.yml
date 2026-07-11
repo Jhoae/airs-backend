@@ -1,0 +1,197 @@
+name: airs
+
+services:
+  # =====================================================================
+  # InfluxDB - 시계열 데이터 DB
+  # =====================================================================
+  influxdb:
+    image: influxdb:2.7
+    container_name: airs-influxdb
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN}
+    volumes:
+      - /home/sogangairs/service/subscribe/data/influxdb/data:/var/lib/influxdb2
+      - /home/sogangairs/service/subscribe/data/influxdb/config:/etc/influxdb2
+    networks:
+      - airs-net
+    healthcheck:
+      test: ["CMD-SHELL", "influx ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # =====================================================================
+  # Grafana - 시계열 데이터 대시보드
+  # =====================================================================
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: airs-grafana
+    restart: unless-stopped
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - /home/sogangairs/service/subscribe/data/grafana:/var/lib/grafana
+    networks:
+      - airs-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # =====================================================================
+  # MySQL - 사용자·기기 메타데이터 RDB
+  # =====================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: airs-mysql
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+09:00
+    volumes:
+      - /home/sogangairs/service/subscribe/data/mysql/data:/var/lib/mysql
+      - /home/sogangairs/service/subscribe/data/mysql/config:/etc/mysql/conf.d
+    networks:
+      - airs-net
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # =====================================================================
+  # MQTT
+  # =====================================================================
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: airs-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - /home/sogangairs/service/subscribe/data/mosquitto/data:/mosquitto/data
+      - /home/sogangairs/service/subscribe/data/mosquitto/config:/mosquitto/config
+      - /home/sogangairs/service/subscribe/data/mosquitto/log:/mosquitto/log
+    networks:
+      - airs-net
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1883", "-t", "$$SYS/broker/uptime", "-C", "1", "-W", "3"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # =====================================================================
+  # Spring Boot - MQTT 구독 + InfluxDB/MySQL 게이트웨이 + REST API
+  # =====================================================================
+  spring:
+    build:
+      context: /home/sogangairs/service/backend
+      dockerfile: Dockerfile
+    container_name: airs-spring
+    restart: unless-stopped
+    working_dir: /tmp
+    depends_on:
+      mysql:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - /home/sogangairs/service/compose/application.yaml:/app/application.yaml:ro
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx1g"
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_CONFIG_ADDITIONAL_LOCATION: "file:/app/application.yaml"
+
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      DDL_AUTO: update     # 첫 실행: update, 이후 validate로 수정
+
+      JWT_SECRET: ${JWT_SECRET_KEY}
+      JWT_ACCESS_TOKEN_EXPIRATION_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES}
+
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${INFLUXDB_TOKEN}
+      INFLUX_ORG: ${INFLUXDB_ORG}
+      INFLUX_BUCKET: ${INFLUXDB_BUCKET}
+      INFLUX_MEASUREMENT: sensor_data
+      INFLUX_NODE_ID_TAG: node_id
+
+      MQTT_ENABLED: "true"
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC: airs/node/+/telemetry
+      OCCUPANCY_STALE_AFTER_MINUTES: "10"
+      OCCUPANCY_INFLUX_WRITE_ENABLED: "true"
+
+    mem_limit: 1500m
+    cpus: 2.0
+    networks:
+      - airs-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qSO- http://localhost:8080/actuator/health 2>&1 | grep -qE 'HTTP/1.[01] (200|401)' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # =====================================================================
+  # Caddy - HTTPS reverse proxy for external web/mobile clients
+  # =====================================================================
+  caddy:
+    image: caddy:2.8
+    container_name: airs-caddy
+    restart: unless-stopped
+    depends_on:
+      spring:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /home/sogangairs/service/compose/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /home/sogangairs/service/mobile-web:/srv/mobile-web:ro
+      - /home/sogangairs/service/subscribe/data/caddy/data:/data
+      - /home/sogangairs/service/subscribe/data/caddy/config:/config
+    networks:
+      - airs-net
+
+networks:
+  airs-net:
+    driver: bridge
+    name: airs-net
