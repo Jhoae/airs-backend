@@ -88,7 +88,7 @@ public class AdminApprovalService {
     public List<AdminPendingApprovalResponse> getPendingAdmins(Long rootAdminUserId) {
         User rootAdmin = adminAccessService.getApprovedRootAdmin(rootAdminUserId);
 
-        return campusAdminRepository.findAdminRequestsByCampusIdAndStatus(
+        return campusAdminRepository.findByCampus_IdAndStatusAndUser_RoleOrderByUser_CreatedAtAsc(
                         rootAdmin.getCampusId(),
                         CampusAdminStatus.PENDING,
                         UserRole.ADMIN

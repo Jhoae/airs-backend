@@ -955,6 +955,14 @@ components:
         - PENDING
         - APPROVED
         - REJECTED
+    AdminApprovalStatus:
+      type: string
+      description: 로그인/회원가입/내 정보 응답에서 사용하는 관리자 승인 상태입니다. 기존 adminApproved보다 명확한 신규 필드입니다.
+      enum:
+        - NOT_APPLICABLE
+        - PENDING
+        - APPROVED
+        - REJECTED
     ConnectionStatus:
       type: string
       enum:
@@ -1048,7 +1056,9 @@ components:
         adminApproved:
           type: boolean
           nullable: true
-          description: USER는 null, ADMIN/ROOT_ADMIN은 campus_admins 승인 여부입니다.
+          description: 기존 호환용 필드입니다. USER는 null, ADMIN은 campus_admins 승인 여부, ROOT_ADMIN은 true입니다. 신규 클라이언트는 adminApprovalStatus를 우선 사용하세요.
+        adminApprovalStatus:
+          $ref: '#/components/schemas/AdminApprovalStatus'
     LoginRequest:
       type: object
       required:
@@ -1085,6 +1095,9 @@ components:
         adminApproved:
           type: boolean
           nullable: true
+          description: 기존 호환용 필드입니다. USER는 null, ADMIN은 campus_admins 승인 여부, ROOT_ADMIN은 true입니다. 신규 클라이언트는 adminApprovalStatus를 우선 사용하세요.
+        adminApprovalStatus:
+          $ref: '#/components/schemas/AdminApprovalStatus'
     UserMeResponse:
       type: object
       properties:
@@ -1107,6 +1120,9 @@ components:
         adminApproved:
           type: boolean
           nullable: true
+          description: 기존 호환용 필드입니다. USER는 null, ADMIN은 campus_admins 승인 여부, ROOT_ADMIN은 true입니다. 신규 클라이언트는 adminApprovalStatus를 우선 사용하세요.
+        adminApprovalStatus:
+          $ref: '#/components/schemas/AdminApprovalStatus'
         createdAt:
           type: string
           format: date-time

@@ -1,6 +1,7 @@
 package com.airs.backend.user.service;
 
 import com.airs.backend.user.dto.UserMeResponse;
+import com.airs.backend.user.entity.AdminApprovalStatus;
 import com.airs.backend.user.entity.CampusAdmin;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserRole;
@@ -32,6 +33,7 @@ public class UserService {
                 user.getPhone(),
                 user.getRole(),
                 getAdminApproved(user),
+                getAdminApprovalStatus(user),
                 user.getCreatedAt()
         );
     }
@@ -40,8 +42,24 @@ public class UserService {
         if (user.getRole() == UserRole.USER) {
             return null;
         }
+        if (user.getRole() == UserRole.ROOT_ADMIN) {
+            return true;
+        }
         return campusAdminRepository.findByUser_Id(user.getUserId())
                 .map(CampusAdmin::isApproved)
                 .orElse(false);
+    }
+
+    private AdminApprovalStatus getAdminApprovalStatus(User user) {
+        if (user.getRole() == UserRole.USER) {
+            return AdminApprovalStatus.NOT_APPLICABLE;
+        }
+        if (user.getRole() == UserRole.ROOT_ADMIN) {
+            return AdminApprovalStatus.APPROVED;
+        }
+        return campusAdminRepository.findByUser_Id(user.getUserId())
+                .map(CampusAdmin::getStatus)
+                .map(AdminApprovalStatus::from)
+                .orElse(AdminApprovalStatus.PENDING);
     }
 }

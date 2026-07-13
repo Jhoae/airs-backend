@@ -1,6 +1,7 @@
 package com.airs.backend.auth.dto;
 
 
+import com.airs.backend.user.entity.AdminApprovalStatus;
 import com.airs.backend.user.entity.UserRole;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -21,5 +22,7 @@ public class LoginResponse {
     private UserRole role;
 
     private Boolean adminApproved;
+
+    private AdminApprovalStatus adminApprovalStatus;
 
 }

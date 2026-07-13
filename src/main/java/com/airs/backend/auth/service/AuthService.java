@@ -7,6 +7,7 @@ import com.airs.backend.auth.dto.SignUpResponse;
 import com.airs.backend.global.jwt.JwtTokenProvider;
 import com.airs.backend.location.entity.Campus;
 import com.airs.backend.location.repository.CampusRepository;
+import com.airs.backend.user.entity.AdminApprovalStatus;
 import com.airs.backend.user.entity.CampusAdmin;
 import com.airs.backend.user.entity.CampusAdminStatus;
 import com.airs.backend.user.entity.User;
@@ -76,7 +77,8 @@ public class AuthService {
                 savedUser.getNickname(),
                 savedUser.getPhone(),
                 savedUser.getRole(),
-                getAdminApproved(savedUser)
+                getAdminApproved(savedUser),
+                getAdminApprovalStatus(savedUser)
         );
     }
 
@@ -106,7 +108,8 @@ public class AuthService {
                 user.getEmail(),
                 user.getNickname(),
                 user.getRole(),
-                getAdminApproved(user)
+                getAdminApproved(user),
+                getAdminApprovalStatus(user)
         );
     }
 
@@ -114,8 +117,24 @@ public class AuthService {
         if (user.getRole() == UserRole.USER) {
             return null;
         }
+        if (user.getRole() == UserRole.ROOT_ADMIN) {
+            return true;
+        }
         return campusAdminRepository.findByUser_Id(user.getUserId())
                 .map(CampusAdmin::isApproved)
                 .orElse(false);
+    }
+
+    private AdminApprovalStatus getAdminApprovalStatus(User user) {
+        if (user.getRole() == UserRole.USER) {
+            return AdminApprovalStatus.NOT_APPLICABLE;
+        }
+        if (user.getRole() == UserRole.ROOT_ADMIN) {
+            return AdminApprovalStatus.APPROVED;
+        }
+        return campusAdminRepository.findByUser_Id(user.getUserId())
+                .map(CampusAdmin::getStatus)
+                .map(AdminApprovalStatus::from)
+                .orElse(AdminApprovalStatus.PENDING);
     }
 }

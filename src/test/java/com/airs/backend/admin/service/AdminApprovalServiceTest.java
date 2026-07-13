@@ -139,7 +139,7 @@ class AdminApprovalServiceTest {
         User secondPendingAdmin = user(3L, campus, "second@example.com", UserRole.ADMIN);
 
         when(adminAccessService.getApprovedRootAdmin(1L)).thenReturn(rootAdmin);
-        when(campusAdminRepository.findAdminRequestsByCampusIdAndStatus(1L, CampusAdminStatus.PENDING, UserRole.ADMIN))
+        when(campusAdminRepository.findByCampus_IdAndStatusAndUser_RoleOrderByUser_CreatedAtAsc(1L, CampusAdminStatus.PENDING, UserRole.ADMIN))
                 .thenReturn(List.of(
                         new CampusAdmin(campus, firstPendingAdmin, CampusAdminStatus.PENDING),
                         new CampusAdmin(campus, secondPendingAdmin, CampusAdminStatus.PENDING)

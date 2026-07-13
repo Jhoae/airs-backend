@@ -99,7 +99,8 @@ class AuthControllerMySqlTest {
                 .andExpect(jsonPath("$.phone").value("01012345678"))
                 .andExpect(jsonPath("$.campusId").value(campusId))
                 .andExpect(jsonPath("$.role").value("USER"))
-                .andExpect(jsonPath("$.adminApproved").doesNotExist());
+                .andExpect(jsonPath("$.adminApproved").doesNotExist())
+                .andExpect(jsonPath("$.adminApprovalStatus").value("NOT_APPLICABLE"));
 
         transactionTemplate.executeWithoutResult(status -> {
             User savedUser = userRepository.findByEmail("signup-success@example.com")
@@ -137,7 +138,8 @@ class AuthControllerMySqlTest {
                 .andExpect(jsonPath("$.email").value("signup-admin@example.com"))
                 .andExpect(jsonPath("$.campusId").value(campusId))
                 .andExpect(jsonPath("$.role").value("ADMIN"))
-                .andExpect(jsonPath("$.adminApproved").value(false));
+                .andExpect(jsonPath("$.adminApproved").value(false))
+                .andExpect(jsonPath("$.adminApprovalStatus").value("PENDING"));
 
         transactionTemplate.executeWithoutResult(status -> {
             User savedUser = userRepository.findByEmail("signup-admin@example.com")
@@ -220,7 +222,8 @@ class AuthControllerMySqlTest {
                 .andExpect(jsonPath("$.email").value("login-success@example.com"))
                 .andExpect(jsonPath("$.nickname").value("jaeho"))
                 .andExpect(jsonPath("$.role").value("USER"))
-                .andExpect(jsonPath("$.adminApproved").doesNotExist());
+                .andExpect(jsonPath("$.adminApproved").doesNotExist())
+                .andExpect(jsonPath("$.adminApprovalStatus").value("NOT_APPLICABLE"));
     }
 
     @Test
@@ -306,7 +309,8 @@ class AuthControllerMySqlTest {
                 .andExpect(jsonPath("$.email").value("me-success@example.com"))
                 .andExpect(jsonPath("$.nickname").value("jaeho"))
                 .andExpect(jsonPath("$.phone").value("01012345678"))
-                .andExpect(jsonPath("$.role").value("USER"));
+                .andExpect(jsonPath("$.role").value("USER"))
+                .andExpect(jsonPath("$.adminApprovalStatus").value("NOT_APPLICABLE"));
     }
 
     @Test
