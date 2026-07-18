@@ -199,7 +199,13 @@ public class SpaceStatusEvaluationService {
     }
 
     HvacWasteResult detectHvacWaste(SpaceEvaluationCurrent current, SpaceEvaluationTrend trend) {
-        // 명시된 HVAC 모드가 없으면 실외 온도와 현재 실내값으로 냉방/난방을 추정한다.
+        // IR 신호는 현재 HVAC가 실제 동작 중이라는 하드웨어 근거다.
+        boolean irDetected = Boolean.TRUE.equals(current.irSignalDetected());
+        // HVAC 모드나 IR 신호가 없으면 온도·재실만으로 냉난방 가동을 단정할 수 없다.
+        if (!hasVerifiedHvacOperation(current, irDetected)) {
+            return HvacWasteResult.none();
+        }
+        // 가동 근거가 확인된 뒤에만 명시 모드 또는 실외 온도로 냉방/난방을 분류한다.
         HvacMode mode = resolveHvacMode(current, trend);
         // 난방 여부는 명시 모드가 우선이고, 모드가 없으면 과난방/과냉방 특징으로 추정한다.
         boolean heating = mode == HvacMode.HEATING || (mode == null && isOverHeating(current) && !isOverCooling(current));
@@ -207,8 +213,6 @@ public class SpaceStatusEvaluationService {
         boolean falling = trend.tempRate30m() != null && trend.tempRate30m() < 0;
         // 최근 30분 온도가 올라가는 것은 난방 지속의 보조 근거다.
         boolean rising = trend.tempRate30m() != null && trend.tempRate30m() > 0;
-        // IR 신호가 있으면 실제 공조 동작 중이라는 추가 근거로 사용한다.
-        boolean irDetected = Boolean.TRUE.equals(current.irSignalDetected());
         // null 부재 시간은 0분으로 계산해 오탐을 방지한다.
         int noOccupancyMinutes = zeroIfNull(trend.noOccupancyMinutes());
         // 냉방/난방처럼 보인 누적 분은 mode가 불명확할 때 보조 근거다.
@@ -276,6 +280,11 @@ public class SpaceStatusEvaluationService {
 
         // 어떤 낭비 규칙에도 해당하지 않으면 의심 없음 결과를 반환한다.
         return HvacWasteResult.none();
+    }
+
+    private boolean hasVerifiedHvacOperation(SpaceEvaluationCurrent current, boolean irDetected) {
+        // hvacMode는 장비나 외부 시스템이 제공한 명시적 냉방/난방 가동 정보다.
+        return current.hvacMode() != null || irDetected;
     }
 
     double temperaturePenalty(Double temperature) {

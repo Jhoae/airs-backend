@@ -136,7 +136,7 @@ class SpaceEvaluationAlertServiceTest {
         assertEquals(AlertSeverity.WARNING, existingAlert.getSeverity());
         assertEquals("냉난방 낭비 의심", existingAlert.getTitle());
         assertEquals("재실이 없는데 냉방 지속이 의심됩니다. 근거: 재실 없음 25분 지속", existingAlert.getMessage());
-        assertEquals("hvac_waste", existingAlert.getMetricName());
+        assertNull(existingAlert.getMetricName());
         assertNull(existingAlert.getMetricValue());
         assertNull(existingAlert.getMetricUnit());
         assertEquals(LocalDateTime.parse("2026-07-09T10:30:00"), existingAlert.getLastDetectedAt());

@@ -96,7 +96,8 @@ public class SpaceEvaluationAlertService {
                 toAlertSeverity(hvacWaste.severity()),
                 "냉난방 낭비 의심",
                 toHvacWasteMessage(hvacWaste),
-                "hvac_waste",
+                // 이 이벤트는 별도의 수치형 측정값이 없고, alertType 자체가 종류를 표현한다.
+                null,
                 null,
                 null,
                 dedupKey,

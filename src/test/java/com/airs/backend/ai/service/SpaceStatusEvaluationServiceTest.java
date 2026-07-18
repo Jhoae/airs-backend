@@ -91,6 +91,31 @@ class SpaceStatusEvaluationServiceTest {
     }
 
     @Test
+    void evaluateSpaceStatus_should_not_detect_hvac_waste_without_verified_hvac_operation() {
+        var result = service.evaluateSpaceStatus(payload(
+                new SpaceEvaluationCurrent(
+                        21.5,
+                        50.0,
+                        600,
+                        OccupancyState.ABSENT,
+                        null,
+                        null,
+                        false,
+                        false,
+                        false,
+                        null,
+                        90.0,
+                        false
+                ),
+                new SpaceEvaluationTrend(null, null, -0.6, 90, null, null, null)
+        ));
+
+        assertFalse(result.hvacWaste().suspected());
+        assertEquals(HvacWasteSeverity.NONE, result.hvacWaste().severity());
+        assertEquals(0.0, result.comfort().components().hvacWastePenalty());
+    }
+
+    @Test
     void evaluateSpaceStatus_should_apply_temperature_and_humidity_penalties() {
         var result = service.evaluateSpaceStatus(payload(
                 current(30.5, 75.0, 700, OccupancyState.PRESENT),
