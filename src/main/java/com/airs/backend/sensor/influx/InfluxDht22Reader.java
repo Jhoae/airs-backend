@@ -146,29 +146,6 @@ public class InfluxDht22Reader {
                 minHumidityItem.getTimestamp()
         );
     }
-
-    // for AI parameter
-    public List<Dht22MeasurementItem> readRange(String nodeId, Instant from, Instant to) {
-        if (nodeId == null || nodeId.isBlank()) {
-            throw new IllegalArgumentException("nodeId가 비어 있습니다.");
-        }
-
-        if (from == null) {
-            throw new IllegalArgumentException("from이 비어 있습니다.");
-        }
-
-        if (to == null) {
-            throw new IllegalArgumentException("to가 비어 있습니다.");
-        }
-
-        if (from.isAfter(to)) {
-            throw new IllegalArgumentException("from은 to보다 이후일 수 없습니다.");
-        }
-
-        return queryMeasurements(nodeId, from, to);
-    }
-
-
     // 노드 상세 페이지
     public List<Co2TrendItem> readCo2Trend(String nodeId, Instant from, Instant to, String window) {
         if (nodeId == null || nodeId.isBlank()) {

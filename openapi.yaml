@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: AIRS Backend API
   version: v2
-  description: AIRS backend API definition for mobile/admin app, sensor ingestion query, and internal AI query.
+  description: AIRS backend API definition for mobile/admin app and sensor ingestion query.
 servers:
   - url: https://airs.bibnear.cloud
     description: Production API via Caddy HTTPS reverse proxy
@@ -23,13 +23,13 @@ tags:
     description: 관리자 앱 분석 요약 및 환기/CO2 분석 API
   - name: Sensor
     description: 인증 사용자가 조회하는 센서 요약 API
-  - name: Internal Sensor
-    description: localhost 내부 AI용 센서 조회 API
+  - name: Health
+    description: 배포 상태를 확인하는 무인증 health API
 paths:
   /actuator/health:
     get:
       tags:
-        - Internal Sensor
+        - Health
       summary: Health check
       description: Docker healthcheck, liveness probe, monitoring tool이 인증 없이 호출할 수 있습니다.
       responses:
@@ -38,12 +38,26 @@ paths:
   /actuator/info:
     get:
       tags:
-        - Internal Sensor
+        - Health
       summary: Application info
       description: 인증 없이 호출 가능한 actuator info endpoint입니다.
       responses:
         '200':
           description: 애플리케이션 정보 조회 성공
+
+  /airs/health:
+    get:
+      tags:
+        - Health
+      summary: Public health check
+      description: Caddy를 거쳐 Spring API에 도달할 수 있는지 확인하는 외부 무인증 endpoint입니다. 데이터베이스, InfluxDB, MQTT 연결 상태까지 검사하지는 않습니다.
+      responses:
+        '200':
+          description: Spring API 응답 가능
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicHealthResponse'
 
   /airs/auth/signup:
     post:
@@ -795,46 +809,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /airs/internal/nodes/{nodeId}/measurements/range:
-    get:
-      tags:
-        - Internal Sensor
-      summary: AI용 센서 기간 조회
-      description: Spring과 같은 컨테이너의 localhost 호출 또는 설정된 신뢰 CIDR 내부 호출 전용 API입니다. localhost 이외의 내부 호출자는 X-AIRS-Internal-Key 헤더로 추가 인증해야 합니다. 온도, 습도, CO2 raw 시계열을 조회합니다.
-      parameters:
-        - $ref: '#/components/parameters/NodeId'
-        - name: X-AIRS-Internal-Key
-          in: header
-          required: false
-          description: localhost 이외의 신뢰된 내부 컨테이너가 호출할 때 필요한 내부 API 인증 키입니다.
-          schema:
-            type: string
-        - name: from
-          in: query
-          required: true
-          schema:
-            type: string
-            format: date-time
-            example: 2026-07-02T00:00:00Z
-        - name: to
-          in: query
-          required: true
-          schema:
-            type: string
-            format: date-time
-            example: 2026-07-02T23:59:59Z
-      responses:
-        '200':
-          description: 조회 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Dht22RangeResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
 
 components:
   securitySchemes:
@@ -1908,22 +1882,14 @@ components:
           type: string
           format: date-time
           nullable: true
-    Dht22RangeResponse:
+    PublicHealthResponse:
       type: object
+      required:
+        - status
       properties:
-        nodeId:
+        status:
           type: string
-          example: node_01
-        from:
-          type: string
-          format: date-time
-        to:
-          type: string
-          format: date-time
-        measurements:
-          type: array
-          items:
-            $ref: '#/components/schemas/Dht22MeasurementItem'
+          example: UP
     Dht22MeasurementItem:
       type: object
       properties:

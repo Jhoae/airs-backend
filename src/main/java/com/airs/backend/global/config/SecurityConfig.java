@@ -18,7 +18,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final LocalhostOnlyInternalApiFilter localhostOnlyInternalApiFilter;
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
 
     @Bean
@@ -48,14 +47,12 @@ public class SecurityConfig {
                         .authenticationEntryPoint(restAuthenticationEntryPoint)
                 ) // 인증이 필요한 요청인데, 인증이 안됐을때, restAuthenticationEntryPoint
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/info", "/airs/health").permitAll()
                         .requestMatchers("/airs/auth/signup", "/airs/auth/login").permitAll()
                         .requestMatchers("/airs/campuses").permitAll()
-                        .requestMatchers("/airs/internal/**").permitAll()
                         .anyRequest().authenticated()
                 ) // 공개 API, 보호 API 규칙
-                .addFilterBefore(localhostOnlyInternalApiFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(jwtAuthenticationFilter, LocalhostOnlyInternalApiFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
                 // JWT 필터를 기본 UsernamePasswordAuthenticationFilter보다 앞쪽에서 실행하겠다
 
         // 위 보안 설정을 바탕으로

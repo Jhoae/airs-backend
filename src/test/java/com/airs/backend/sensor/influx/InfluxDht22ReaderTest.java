@@ -82,37 +82,6 @@ class InfluxDht22ReaderTest {
     }
 
     @Test
-    void readRange_should_query_influx_and_map_records() {
-        Instant from = Instant.parse("2026-05-06T00:00:00Z");
-        Instant to = Instant.parse("2026-05-06T01:00:00Z");
-        Instant timestamp = Instant.parse("2026-05-06T00:00:05Z");
-
-        when(fluxTable.getRecords()).thenReturn(List.of(fluxRecord));
-        when(fluxRecord.getValueByKey("temperature_c")).thenReturn(26.5);
-        when(fluxRecord.getValueByKey("humidity_pct")).thenReturn(50.3);
-        when(fluxRecord.getValueByKey("co2_ppm")).thenReturn(842.0);
-        when(fluxRecord.getTime()).thenReturn(timestamp);
-        when(queryApi.query(org.mockito.ArgumentMatchers.anyString(), eq("airs-org")))
-                .thenReturn(List.of(fluxTable));
-
-        List<Dht22MeasurementItem> measurements = influxDht22Reader.readRange("node_01", from, to);
-
-        assertEquals(1, measurements.size());
-        assertEquals(26.5, measurements.get(0).getTemperature());
-        assertEquals(50.3, measurements.get(0).getHumidity());
-        assertEquals(842, measurements.get(0).getCo2Ppm());
-        assertEquals(timestamp, measurements.get(0).getTimestamp());
-
-        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
-        verify(queryApi).query(queryCaptor.capture(), eq("airs-org"));
-        String query = queryCaptor.getValue();
-        assertEquals(true, query.contains("from(bucket: \"airs\")"));
-        assertEquals(true, query.contains("r._measurement == \"sensor_data\""));
-        assertEquals(true, query.contains("r.node_id == \"node_01\""));
-        assertEquals(true, query.contains("r._field == \"temperature_c\" or r._field == \"humidity_pct\" or r._field == \"co2_ppm\""));
-    }
-
-    @Test
     void readCo2Trend_should_query_influx_with_aggregate_window() {
         Instant from = Instant.parse("2026-05-06T00:00:00Z");
         Instant to = Instant.parse("2026-05-06T06:00:00Z");
@@ -210,15 +179,6 @@ class InfluxDht22ReaderTest {
         assertEquals(true, queries.get(0).contains("r._field == \"temperature_c\" or r._field == \"humidity_pct\" or r._field == \"co2_ppm\""));
         assertEquals(true, queries.get(1).contains("r._field == \"minutes_since_motion\""));
         assertEquals(true, queries.get(1).contains("|> last()"));
-    }
-
-    @Test
-    void readRange_should_fail_when_from_is_after_to() {
-        Instant from = Instant.parse("2026-05-06T01:00:00Z");
-        Instant to = Instant.parse("2026-05-06T00:00:00Z");
-
-        assertThrows(IllegalArgumentException.class,
-                () -> influxDht22Reader.readRange("node_01", from, to));
     }
 
     private FluxRecord measurementRecord(
