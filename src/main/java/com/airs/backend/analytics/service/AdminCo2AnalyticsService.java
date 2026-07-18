@@ -118,13 +118,6 @@ public class AdminCo2AnalyticsService {
         return buildDistribution(context.spaces(), context.snapshotsBySpaceId());
     }
 
-    public List<AdminCo2TrendPointResponse> getTodayTrend(Long userId, LocalDate date) {
-        User admin = adminAccessService.getApprovedAdmin(userId);
-        LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
-        Co2SnapshotContext context = loadCo2SnapshotContext(admin.getCampusId());
-        return readDailyTrend(context.activeNodeIds(), targetDate);
-    }
-
     private Co2SnapshotContext loadCo2SnapshotContext(Long campusId) {
         List<NodeInstallation> installations = nodeInstallationRepository
                 .findAllBySpace_Campus_IdAndActiveTrue(campusId)

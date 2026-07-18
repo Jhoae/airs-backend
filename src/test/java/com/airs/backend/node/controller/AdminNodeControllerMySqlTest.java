@@ -412,25 +412,6 @@ class AdminNodeControllerMySqlTest {
     }
 
     @Test
-    void getAnalyticsOverviewCo2AverageTrend_should_return_only_today_average_trend() throws Exception {
-        Long adminId = saveCo2AnalyticsFixture();
-        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
-        when(influxDht22Reader.readAverageCo2Trend(anyList(), any(Instant.class), any(Instant.class), eq("1h")))
-                .thenReturn(List.of(
-                        new Co2TrendItem(Instant.parse("2026-07-06T00:00:00Z"), 842),
-                        new Co2TrendItem(Instant.parse("2026-07-06T01:00:00Z"), 901)
-                ));
-
-        mockMvc.perform(get("/airs/admin/analytics/overview/co2-average-trend")
-                        .param("date", "2026-07-06")
-                        .header("Authorization", "Bearer " + accessToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].timestamp").value("2026-07-06T00:00:00Z"))
-                .andExpect(jsonPath("$[0].co2Ppm").value(842))
-                .andExpect(jsonPath("$[1].co2Ppm").value(901));
-    }
-
-    @Test
     void getAnalyticsOverviewStatusDistributions_should_count_only_spaces_with_active_node_installations() throws Exception {
         Long adminId = saveCo2AnalyticsFixture();
         String accessToken = jwtTokenProvider.generateAccessToken(adminId);

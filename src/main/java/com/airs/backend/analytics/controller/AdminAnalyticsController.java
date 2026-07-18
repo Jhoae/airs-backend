@@ -5,7 +5,6 @@ import com.airs.backend.analytics.dto.AdminAnalyticsStatusDistributionsResponse;
 import com.airs.backend.analytics.dto.AdminCo2DistributionResponse;
 import com.airs.backend.analytics.dto.AdminCo2SummaryResponse;
 import com.airs.backend.analytics.dto.AdminCo2TopSpacesResponse;
-import com.airs.backend.analytics.dto.AdminCo2TrendPointResponse;
 import com.airs.backend.analytics.dto.AdminCo2TrendResponse;
 import com.airs.backend.analytics.service.AdminAnalyticsOverviewService;
 import com.airs.backend.analytics.service.AdminCo2AnalyticsService;
@@ -20,8 +19,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
-import java.util.List;
-
 @RestController
 @RequestMapping("/airs/admin/analytics")
 @RequiredArgsConstructor
@@ -36,18 +33,6 @@ public class AdminAnalyticsController {
     ) {
         AdminAnalyticsOverviewMetricsResponse response = adminAnalyticsOverviewService.getMetrics(
                 currentUser.getUserId()
-        );
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/overview/co2-average-trend")
-    public ResponseEntity<List<AdminCo2TrendPointResponse>> getOverviewCo2AverageTrend(
-            @AuthenticationPrincipal CurrentUserPrincipal currentUser,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
-    ) {
-        List<AdminCo2TrendPointResponse> response = adminAnalyticsOverviewService.getCo2AverageTrend(
-                currentUser.getUserId(),
-                date
         );
         return ResponseEntity.ok(response);
     }

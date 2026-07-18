@@ -5,7 +5,6 @@ import com.airs.backend.analytics.dto.AdminAnalyticsDistributionItemResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsOverviewMetricsResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsStatusDistributionsResponse;
 import com.airs.backend.analytics.dto.AdminCo2DistributionItemResponse;
-import com.airs.backend.analytics.dto.AdminCo2TrendPointResponse;
 import com.airs.backend.analytics.dto.AdminCo2VentilationSummaryResponse;
 import com.airs.backend.location.entity.Space;
 import com.airs.backend.node.entity.NodeInstallation;
@@ -47,10 +46,6 @@ public class AdminAnalyticsOverviewService {
         OverviewSnapshotContext context = loadOverviewSnapshotContext(userId, null);
         AdminCo2VentilationSummaryResponse ventilationSummary = adminCo2AnalyticsService.getVentilationSummary(userId);
         return buildMetrics(ventilationSummary, context.installations(), context.nodeStatusByNodeId());
-    }
-
-    public List<AdminCo2TrendPointResponse> getCo2AverageTrend(Long userId, LocalDate date) {
-        return adminCo2AnalyticsService.getTodayTrend(userId, date);
     }
 
     public AdminAnalyticsStatusDistributionsResponse getStatusDistributions(Long userId) {
