@@ -153,7 +153,11 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: 요청한 캠퍼스를 찾을 수 없거나 삭제되었습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
 
   /airs/admin/admins/{userId}/approve:
     patch:
@@ -265,7 +269,11 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: 요청한 캠퍼스를 찾을 수 없거나 삭제되었습니다.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
     post:
       tags:
         - Campus
@@ -419,7 +427,7 @@ paths:
       tags:
         - Admin Nodes
       summary: 관리자 노드 삭제
-      description: 물리 노드 row를 삭제하지 않고 active installation을 비활성화합니다.
+      description: 물리 노드 row를 삭제하지 않고 active installation을 비활성화합니다. 삭제한 노드에 연결된 ACTIVE 알림은 자동으로 RESOLVED 처리합니다.
       security:
         - bearerAuth: []
       parameters:
@@ -439,7 +447,13 @@ paths:
       tags:
         - Admin Nodes
       summary: 관리자 노드 CO2 추이 조회
-      description: InfluxDB의 telemetry co2_ppm 시계열을 조회합니다.
+      description: >
+        InfluxDB의 telemetry co2_ppm 시계열을 집계하여 노드 상세 그래프에 반환합니다.
+        호출 방식은 두 가지입니다. period=1d|5d|1mo|6mo|1y를 지정하면 기간별 기본 집계 간격을
+        사용합니다(1d=10m, 5d=1h, 1mo=6h, 6mo=1d, 1y=1d). period를 생략하면 최근 hours시간을
+        window 간격으로 집계합니다(기본 hours=6, window=5m). period와 hours/window를 함께 보내도
+        오류가 나지 않으며, period가 우선되어 hours와 window는 무시됩니다. 예를 들어
+        period=5d&hours=6&window=30s 요청은 최근 5일을 1시간 단위로 반환합니다.
       security:
         - bearerAuth: []
       parameters:
@@ -447,7 +461,9 @@ paths:
         - name: period
           in: query
           required: false
-          description: 장기 CO2 그래프 조회 기간입니다. period가 있으면 hours/window 대신 기간별 기본 window를 사용합니다.
+          description: >
+            프리셋 기간 모드입니다. 지정 시 hours/window보다 우선하며, 1d=10m, 5d=1h,
+            1mo=6h, 6mo=1d, 1y=1d 기본 집계 간격을 사용합니다. 예: period=5d.
           schema:
             type: string
             enum:
@@ -460,7 +476,9 @@ paths:
         - name: hours
           in: query
           required: false
-          description: period가 없을 때 사용하는 최근 조회 시간입니다.
+          description: >
+            사용자 정의 최근 시간 모드입니다. period를 생략했을 때만 사용하며 1~24만 허용합니다.
+            window와 함께 사용합니다. 둘 다 생략하면 최근 6시간을 기본 5분 단위로 반환합니다.
           schema:
             type: integer
             minimum: 1
@@ -469,7 +487,9 @@ paths:
         - name: window
           in: query
           required: false
-          description: 'Flux aggregateWindow 간격입니다. 예: 30s, 1m, 5m, 1h'
+          description: >
+            사용자 정의 최근 시간 모드의 Flux aggregateWindow 간격입니다. period를 생략했을 때만
+            사용합니다. 예: hours=6&window=5m. 허용 형식은 숫자 뒤에 s, m, h, d가 붙는 값입니다.
           schema:
             type: string
             default: 5m
@@ -489,37 +509,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /airs/admin/analytics/co2:
-    get:
-      tags:
-        - Admin Analytics
-      summary: 관리자 환기/CO2 분석 조회
-      description: 환기/CO2 분석 화면의 CO2 현황 탭을 한 번에 조회하는 호환용 API입니다. 화면 초기 로딩 속도가 중요하면 섹션별 API 사용을 권장합니다.
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: date
-          in: query
-          required: false
-          description: 조회 기준 날짜입니다. 생략하면 서버 기준 오늘 날짜를 사용합니다.
-          schema:
-            type: string
-            format: date
-            example: '2026-07-07'
-      responses:
-        '200':
-          description: 환기/CO2 분석 조회 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminCo2AnalyticsResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
 
   /airs/admin/analytics/co2/summary:
     get:
@@ -656,37 +645,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminCo2TopSpacesResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /airs/admin/analytics/overview:
-    get:
-      tags:
-        - Admin Analytics
-      summary: 관리자 분석 요약 조회
-      description: 분석 요약 화면의 전체 요약 탭을 한 번에 조회하는 호환용 API입니다. 화면 초기 로딩 속도가 중요하면 섹션별 API 사용을 권장합니다.
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: date
-          in: query
-          required: false
-          description: 조회 기준 날짜입니다. 생략하면 서버 기준 오늘 날짜를 사용합니다.
-          schema:
-            type: string
-            format: date
-            example: '2026-07-07'
-      responses:
-        '200':
-          description: 분석 요약 조회 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminAnalyticsOverviewResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -843,9 +801,15 @@ paths:
       tags:
         - Internal Sensor
       summary: AI용 센서 기간 조회
-      description: localhost 내부 호출 전용 API입니다. 온도, 습도, CO2 raw 시계열을 조회합니다.
+      description: Spring과 같은 컨테이너의 localhost 호출 또는 설정된 신뢰 CIDR 내부 호출 전용 API입니다. localhost 이외의 내부 호출자는 X-AIRS-Internal-Key 헤더로 추가 인증해야 합니다. 온도, 습도, CO2 raw 시계열을 조회합니다.
       parameters:
         - $ref: '#/components/parameters/NodeId'
+        - name: X-AIRS-Internal-Key
+          in: header
+          required: false
+          description: localhost 이외의 신뢰된 내부 컨테이너가 호출할 때 필요한 내부 API 인증 키입니다.
+          schema:
+            type: string
         - name: from
           in: query
           required: true
@@ -1582,44 +1546,6 @@ components:
         co2Ppm:
           type: integer
           nullable: true
-    AdminCo2AnalyticsResponse:
-      type: object
-      properties:
-        campusId:
-          type: integer
-          format: int64
-        campusName:
-          type: string
-          example: 서강대학교
-        date:
-          type: string
-          format: date
-          example: '2026-07-07'
-        totalSpaceCount:
-          type: integer
-          example: 25
-        averageCo2Ppm:
-          type: integer
-          nullable: true
-          example: 842
-        ventilationSummary:
-          $ref: '#/components/schemas/AdminCo2VentilationSummaryResponse'
-        distribution:
-          type: array
-          items:
-            $ref: '#/components/schemas/AdminCo2DistributionItemResponse'
-        todayTrend:
-          type: array
-          items:
-            $ref: '#/components/schemas/AdminCo2TrendPointResponse'
-        yesterdayTrend:
-          type: array
-          items:
-            $ref: '#/components/schemas/AdminCo2TrendPointResponse'
-        topSpaces:
-          type: array
-          items:
-            $ref: '#/components/schemas/AdminCo2TopSpaceResponse'
     AdminCo2SummaryResponse:
       type: object
       properties:
@@ -1810,37 +1736,6 @@ components:
         co2StatusLabel:
           type: string
           example: 나쁨
-    AdminAnalyticsOverviewResponse:
-      type: object
-      properties:
-        campusId:
-          type: integer
-          format: int64
-        campusName:
-          type: string
-          example: 서강대학교
-        date:
-          type: string
-          format: date
-          example: '2026-07-07'
-        summaryText:
-          type: string
-          nullable: true
-          description: AI 요약이 확정되기 전까지 null입니다.
-          example: null
-        metrics:
-          $ref: '#/components/schemas/AdminAnalyticsOverviewMetricsResponse'
-        co2AverageTrend:
-          type: array
-          items:
-            $ref: '#/components/schemas/AdminCo2TrendPointResponse'
-        statusDistributions:
-          $ref: '#/components/schemas/AdminAnalyticsStatusDistributionsResponse'
-        topInsights:
-          type: array
-          description: AI가 아닌 rule-based 주요 점검 항목입니다. 후보가 부족하면 3개보다 적게 반환합니다.
-          items:
-            $ref: '#/components/schemas/AdminAnalyticsInsightResponse'
     AdminAnalyticsOverviewMetricsResponse:
       type: object
       properties:

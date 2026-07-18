@@ -2,6 +2,7 @@ package com.airs.backend.alert.repository;
 
 import com.airs.backend.alert.entity.Alert;
 import com.airs.backend.alert.entity.AlertStatus;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -22,4 +23,7 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
     long countBySpace_IdAndStatus(Long spaceId, AlertStatus status);
 
     long countByNode_IdAndStatus(String nodeId, AlertStatus status);
+
+    @EntityGraph(attributePaths = "node")
+    List<Alert> findAllByNode_IdInAndStatus(List<String> nodeIds, AlertStatus status);
 }

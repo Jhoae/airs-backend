@@ -302,55 +302,7 @@ class AdminNodeControllerMySqlTest {
     }
 
     @Test
-    void getCo2Analytics_should_return_campus_co2_status_for_admin() throws Exception {
-        Long adminId = saveCo2AnalyticsFixture();
-        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
-        when(influxDht22Reader.readAverageCo2Trend(anyList(), any(Instant.class), any(Instant.class), eq("1h")))
-                .thenReturn(
-                        List.of(
-                                new Co2TrendItem(Instant.parse("2026-07-06T00:00:00Z"), 842),
-                                new Co2TrendItem(Instant.parse("2026-07-06T01:00:00Z"), 901)
-                        ),
-                        List.of(
-                                new Co2TrendItem(Instant.parse("2026-07-05T00:00:00Z"), 700)
-                        )
-                );
-
-        mockMvc.perform(get("/airs/admin/analytics/co2")
-                        .param("date", "2026-07-06")
-                        .header("Authorization", "Bearer " + accessToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.campusName").value("서강대학교"))
-                .andExpect(jsonPath("$.date").value("2026-07-06"))
-                .andExpect(jsonPath("$.totalSpaceCount").value(4))
-                .andExpect(jsonPath("$.averageCo2Ppm").value(1203))
-                .andExpect(jsonPath("$.ventilationSummary.goodCount").value(1))
-                .andExpect(jsonPath("$.ventilationSummary.recommendedCount").value(1))
-                .andExpect(jsonPath("$.ventilationSummary.neededCount").value(1))
-                .andExpect(jsonPath("$.ventilationSummary.noDataCount").value(1))
-                .andExpect(jsonPath("$.distribution[0].status").value("GOOD"))
-                .andExpect(jsonPath("$.distribution[0].count").value(1))
-                .andExpect(jsonPath("$.distribution[0].unit").value("SPACE"))
-                .andExpect(jsonPath("$.distribution[0].totalCount").value(4))
-                .andExpect(jsonPath("$.distribution[1].status").value("NORMAL"))
-                .andExpect(jsonPath("$.distribution[1].count").value(0))
-                .andExpect(jsonPath("$.distribution[2].status").value("WARNING"))
-                .andExpect(jsonPath("$.distribution[2].count").value(1))
-                .andExpect(jsonPath("$.distribution[3].status").value("BAD"))
-                .andExpect(jsonPath("$.distribution[3].count").value(1))
-                .andExpect(jsonPath("$.distribution[4].status").value("NO_DATA"))
-                .andExpect(jsonPath("$.distribution[4].count").value(1))
-                .andExpect(jsonPath("$.todayTrend[0].co2Ppm").value(842))
-                .andExpect(jsonPath("$.yesterdayTrend[0].co2Ppm").value(700))
-                .andExpect(jsonPath("$.topSpaces[0].spaceCode").value("D501"))
-                .andExpect(jsonPath("$.topSpaces[0].co2Ppm").value(1582))
-                .andExpect(jsonPath("$.topSpaces[0].co2Status").value("BAD"))
-                .andExpect(jsonPath("$.topSpaces[1].spaceCode").value("R904"))
-                .andExpect(jsonPath("$.topSpaces[2].spaceCode").value("K301"));
-    }
-
-    @Test
-    void getCo2Summary_should_return_summary_without_influx_trend_query() throws Exception {
+    void getCo2Summary_should_count_only_spaces_with_active_node_installations() throws Exception {
         Long adminId = saveCo2AnalyticsFixture();
         String accessToken = jwtTokenProvider.generateAccessToken(adminId);
 
@@ -360,18 +312,18 @@ class AdminNodeControllerMySqlTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.campusName").value("서강대학교"))
                 .andExpect(jsonPath("$.date").value("2026-07-06"))
-                .andExpect(jsonPath("$.totalSpaceCount").value(4))
+                .andExpect(jsonPath("$.totalSpaceCount").value(3))
                 .andExpect(jsonPath("$.averageCo2Ppm").value(1203))
                 .andExpect(jsonPath("$.ventilationSummary.goodCount").value(1))
                 .andExpect(jsonPath("$.ventilationSummary.recommendedCount").value(1))
                 .andExpect(jsonPath("$.ventilationSummary.neededCount").value(1))
-                .andExpect(jsonPath("$.ventilationSummary.noDataCount").value(1));
+                .andExpect(jsonPath("$.ventilationSummary.noDataCount").value(0));
 
         verify(influxDht22Reader, never()).readAverageCo2Trend(anyList(), any(Instant.class), any(Instant.class), any());
     }
 
     @Test
-    void getCo2Distribution_should_return_space_based_distribution_without_influx_trend_query() throws Exception {
+    void getCo2Distribution_should_count_only_spaces_with_active_node_installations() throws Exception {
         Long adminId = saveCo2AnalyticsFixture();
         String accessToken = jwtTokenProvider.generateAccessToken(adminId);
 
@@ -380,18 +332,18 @@ class AdminNodeControllerMySqlTest {
                         .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.campusName").value("서강대학교"))
-                .andExpect(jsonPath("$.totalSpaceCount").value(4))
+                .andExpect(jsonPath("$.totalSpaceCount").value(3))
                 .andExpect(jsonPath("$.averageCo2Ppm").value(1203))
                 .andExpect(jsonPath("$.distribution[0].status").value("GOOD"))
                 .andExpect(jsonPath("$.distribution[0].count").value(1))
                 .andExpect(jsonPath("$.distribution[0].unit").value("SPACE"))
-                .andExpect(jsonPath("$.distribution[0].totalCount").value(4))
+                .andExpect(jsonPath("$.distribution[0].totalCount").value(3))
                 .andExpect(jsonPath("$.distribution[2].status").value("WARNING"))
                 .andExpect(jsonPath("$.distribution[2].count").value(1))
                 .andExpect(jsonPath("$.distribution[3].status").value("BAD"))
                 .andExpect(jsonPath("$.distribution[3].count").value(1))
                 .andExpect(jsonPath("$.distribution[4].status").value("NO_DATA"))
-                .andExpect(jsonPath("$.distribution[4].count").value(1));
+                .andExpect(jsonPath("$.distribution[4].count").value(0));
 
         verify(influxDht22Reader, never()).readAverageCo2Trend(anyList(), any(Instant.class), any(Instant.class), any());
     }
@@ -479,7 +431,7 @@ class AdminNodeControllerMySqlTest {
     }
 
     @Test
-    void getAnalyticsOverviewStatusDistributions_should_return_distributions_without_influx_trend_query() throws Exception {
+    void getAnalyticsOverviewStatusDistributions_should_count_only_spaces_with_active_node_installations() throws Exception {
         Long adminId = saveCo2AnalyticsFixture();
         String accessToken = jwtTokenProvider.generateAccessToken(adminId);
 
@@ -489,7 +441,7 @@ class AdminNodeControllerMySqlTest {
                 .andExpect(jsonPath("$.co2[0].status").value("GOOD"))
                 .andExpect(jsonPath("$.co2[0].count").value(1))
                 .andExpect(jsonPath("$.co2[0].unit").value("SPACE"))
-                .andExpect(jsonPath("$.co2[0].totalCount").value(4))
+                .andExpect(jsonPath("$.co2[0].totalCount").value(3))
                 .andExpect(jsonPath("$.co2[2].status").value("WARNING"))
                 .andExpect(jsonPath("$.co2[2].count").value(1))
                 .andExpect(jsonPath("$.co2[3].status").value("BAD"))
@@ -497,11 +449,11 @@ class AdminNodeControllerMySqlTest {
                 .andExpect(jsonPath("$.occupancy[0].status").value("OCCUPIED"))
                 .andExpect(jsonPath("$.occupancy[0].count").value(2))
                 .andExpect(jsonPath("$.occupancy[0].unit").value("SPACE"))
-                .andExpect(jsonPath("$.occupancy[0].totalCount").value(4))
+                .andExpect(jsonPath("$.occupancy[0].totalCount").value(3))
                 .andExpect(jsonPath("$.occupancy[1].status").value("UNOCCUPIED"))
                 .andExpect(jsonPath("$.occupancy[1].count").value(1))
                 .andExpect(jsonPath("$.occupancy[3].status").value("NO_DATA"))
-                .andExpect(jsonPath("$.occupancy[3].count").value(1))
+                .andExpect(jsonPath("$.occupancy[3].count").value(0))
                 .andExpect(jsonPath("$.connection[3].status").value("UNKNOWN"))
                 .andExpect(jsonPath("$.connection[3].count").value(3))
                 .andExpect(jsonPath("$.connection[3].unit").value("NODE"))

@@ -55,12 +55,14 @@ public class AdminNodeListService {
         Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId = spaceStatusSnapshotRepository.findAllBySpace_IdIn(spaceIds)
                 .stream()
                 .collect(Collectors.toMap(snapshot -> snapshot.getSpace().getId(), Function.identity()));
+        Map<String, Long> activeAlertCountsByNodeId = findActiveAlertCountsByNodeId(nodeIds);
 
         List<NodeListRow> rows = installations.stream()
                 .map(installation -> toRow(
                         installation,
                         nodeStatusByNodeId.get(installation.getNode().getId()),
-                        spaceStatusBySpaceId.get(installation.getSpace().getId())
+                        spaceStatusBySpaceId.get(installation.getSpace().getId()),
+                        activeAlertCountsByNodeId.getOrDefault(installation.getNode().getId(), 0L)
                 ))
                 .sorted(comparator(AdminNodeSort.from(sortValue)))
                 .toList();
@@ -83,12 +85,12 @@ public class AdminNodeListService {
     private NodeListRow toRow(
             NodeInstallation installation,
             NodeStatusSnapshot nodeStatus,
-            SpaceStatusSnapshot spaceStatus
+            SpaceStatusSnapshot spaceStatus,
+            long alertCount
     ) {
         ConnectionStatus connectionStatus = nodeStatus == null
                 ? ConnectionStatus.UNKNOWN
                 : nodeStatus.getConnectionStatus();
-        long alertCount = alertRepository.countByNode_IdAndStatus(installation.getNode().getId(), AlertStatus.ACTIVE);
 
         return new NodeListRow(
                 installation,
@@ -97,6 +99,19 @@ public class AdminNodeListService {
                 connectionStatus,
                 alertCount
         );
+    }
+
+    private Map<String, Long> findActiveAlertCountsByNodeId(List<String> nodeIds) {
+        if (nodeIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return alertRepository.findAllByNode_IdInAndStatus(nodeIds, AlertStatus.ACTIVE)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        alert -> alert.getNode().getId(),
+                        Collectors.counting()
+                ));
     }
 
     private Comparator<NodeListRow> comparator(AdminNodeSort sort) {

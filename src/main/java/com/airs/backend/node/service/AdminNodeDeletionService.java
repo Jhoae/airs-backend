@@ -1,6 +1,8 @@
 package com.airs.backend.node.service;
 
 import com.airs.backend.admin.service.AdminAccessService;
+import com.airs.backend.alert.entity.AlertStatus;
+import com.airs.backend.alert.repository.AlertRepository;
 import com.airs.backend.location.entity.Space;
 import com.airs.backend.node.entity.AirsNode;
 import com.airs.backend.node.entity.NodeInstallation;
@@ -15,6 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -24,6 +28,7 @@ public class AdminNodeDeletionService {
     private final NodeInstallationRepository nodeInstallationRepository;
     private final NodeStatusSnapshotRepository nodeStatusSnapshotRepository;
     private final SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
+    private final AlertRepository alertRepository;
 
     public void deleteNode(Long userId, String nodeId) {
         User admin = adminAccessService.getApprovedAdmin(userId);
@@ -36,7 +41,14 @@ public class AdminNodeDeletionService {
         installation.deactivate();
         nodeStatusSnapshotRepository.findByNode_Id(nodeId)
                 .ifPresent(nodeStatus -> nodeStatus.markOffline());
+        resolveActiveNodeAlerts(nodeId);
         refreshRepresentativeNode(space, nodeId);
+    }
+
+    private void resolveActiveNodeAlerts(String nodeId) {
+        LocalDateTime resolvedAt = LocalDateTime.now();
+        alertRepository.findAllByNode_IdAndStatusOrderByLastDetectedAtDesc(nodeId, AlertStatus.ACTIVE)
+                .forEach(alert -> alert.resolve(resolvedAt));
     }
 
     private void validateSameCampus(User admin, NodeInstallation installation) {

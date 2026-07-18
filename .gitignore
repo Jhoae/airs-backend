@@ -42,3 +42,4 @@ src/test/resources/application.properties
 *.jks
 
 *.log
+docs/troubleshooting/

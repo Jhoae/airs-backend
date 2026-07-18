@@ -53,7 +53,10 @@ public class AdminLocationService {
 
     public List<AdminBuildingResponse> getBuildings(Long userId, Long campusId) {
         User admin = adminAccessService.getApprovedAdmin(userId);
-        validateSameCampus(admin, campusId);
+        Campus campus = campusRepository.findByIdAndDeletedAtIsNull(campusId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "캠퍼스를 찾을 수 없습니다."));
+
+        validateSameCampus(admin, campus.getCampusId());
 
         return buildingRepository.findAllByCampus_IdAndDeletedAtIsNullOrderByNameAsc(campusId)
                 .stream()

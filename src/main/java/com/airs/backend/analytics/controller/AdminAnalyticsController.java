@@ -1,8 +1,6 @@
 package com.airs.backend.analytics.controller;
 
-import com.airs.backend.analytics.dto.AdminCo2AnalyticsResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsOverviewMetricsResponse;
-import com.airs.backend.analytics.dto.AdminAnalyticsOverviewResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsStatusDistributionsResponse;
 import com.airs.backend.analytics.dto.AdminCo2DistributionResponse;
 import com.airs.backend.analytics.dto.AdminCo2SummaryResponse;
@@ -32,18 +30,6 @@ public class AdminAnalyticsController {
     private final AdminCo2AnalyticsService adminCo2AnalyticsService;
     private final AdminAnalyticsOverviewService adminAnalyticsOverviewService;
 
-    @GetMapping("/overview")
-    public ResponseEntity<AdminAnalyticsOverviewResponse> getOverview(
-            @AuthenticationPrincipal CurrentUserPrincipal currentUser,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
-    ) {
-        AdminAnalyticsOverviewResponse response = adminAnalyticsOverviewService.getOverview(
-                currentUser.getUserId(),
-                date
-        );
-        return ResponseEntity.ok(response);
-    }
-
     @GetMapping("/overview/metrics")
     public ResponseEntity<AdminAnalyticsOverviewMetricsResponse> getOverviewMetrics(
             @AuthenticationPrincipal CurrentUserPrincipal currentUser
@@ -72,18 +58,6 @@ public class AdminAnalyticsController {
     ) {
         AdminAnalyticsStatusDistributionsResponse response = adminAnalyticsOverviewService.getStatusDistributions(
                 currentUser.getUserId()
-        );
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/co2")
-    public ResponseEntity<AdminCo2AnalyticsResponse> getCo2Analytics(
-            @AuthenticationPrincipal CurrentUserPrincipal currentUser,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
-    ) {
-        AdminCo2AnalyticsResponse response = adminCo2AnalyticsService.getCo2Analytics(
-                currentUser.getUserId(),
-                date
         );
         return ResponseEntity.ok(response);
     }

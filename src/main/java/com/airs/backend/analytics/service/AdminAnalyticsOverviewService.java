@@ -2,15 +2,12 @@ package com.airs.backend.analytics.service;
 
 import com.airs.backend.admin.service.AdminAccessService;
 import com.airs.backend.analytics.dto.AdminAnalyticsDistributionItemResponse;
-import com.airs.backend.analytics.dto.AdminAnalyticsInsightResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsOverviewMetricsResponse;
-import com.airs.backend.analytics.dto.AdminAnalyticsOverviewResponse;
 import com.airs.backend.analytics.dto.AdminAnalyticsStatusDistributionsResponse;
 import com.airs.backend.analytics.dto.AdminCo2DistributionItemResponse;
 import com.airs.backend.analytics.dto.AdminCo2TrendPointResponse;
 import com.airs.backend.analytics.dto.AdminCo2VentilationSummaryResponse;
 import com.airs.backend.location.entity.Space;
-import com.airs.backend.location.repository.SpaceRepository;
 import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.NodeInstallationRepository;
 import com.airs.backend.status.entity.ConnectionStatus;
@@ -27,14 +24,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -42,37 +37,11 @@ import java.util.stream.Stream;
 public class AdminAnalyticsOverviewService {
 
     private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
-    private static final int TOP_INSIGHT_LIMIT = 3;
-
     private final AdminAccessService adminAccessService;
     private final AdminCo2AnalyticsService adminCo2AnalyticsService;
-    private final SpaceRepository spaceRepository;
     private final NodeInstallationRepository nodeInstallationRepository;
     private final NodeStatusSnapshotRepository nodeStatusSnapshotRepository;
     private final SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
-
-    public AdminAnalyticsOverviewResponse getOverview(Long userId, LocalDate date) {
-        OverviewSnapshotContext context = loadOverviewSnapshotContext(userId, date);
-        AdminCo2VentilationSummaryResponse ventilationSummary = adminCo2AnalyticsService.getVentilationSummary(userId);
-        List<AdminCo2DistributionItemResponse> co2Distribution = adminCo2AnalyticsService.getDistribution(userId);
-
-        return new AdminAnalyticsOverviewResponse(
-                context.admin().getCampusId(),
-                context.admin().getCampus().getName(),
-                context.targetDate(),
-                null,
-                buildMetrics(ventilationSummary, context.installations(), context.nodeStatusByNodeId()),
-                getCo2AverageTrend(userId, context.targetDate()),
-                buildStatusDistributions(
-                        co2Distribution,
-                        context.spaces(),
-                        context.installations(),
-                        context.nodeStatusByNodeId(),
-                        context.spaceStatusBySpaceId()
-                ),
-                buildTopInsights(context.installations(), context.nodeStatusByNodeId(), context.spaceStatusBySpaceId())
-        );
-    }
 
     public AdminAnalyticsOverviewMetricsResponse getMetrics(Long userId) {
         OverviewSnapshotContext context = loadOverviewSnapshotContext(userId, null);
@@ -101,7 +70,17 @@ public class AdminAnalyticsOverviewService {
         LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
         List<NodeInstallation> installations = nodeInstallationRepository
                 .findAllBySpace_Campus_IdAndActiveTrue(admin.getCampusId());
-        List<Space> spaces = spaceRepository.findAllByCampus_IdAndDeletedAtIsNull(admin.getCampusId());
+        List<Space> spaces = installations.stream()
+                .map(NodeInstallation::getSpace)
+                .collect(Collectors.toMap(
+                        Space::getId,
+                        Function.identity(),
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ))
+                .values()
+                .stream()
+                .toList();
         Map<String, NodeStatusSnapshot> nodeStatusByNodeId = findNodeStatusByNodeId(installations);
         Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId = findSpaceStatusBySpaceId(spaces);
 
@@ -251,121 +230,6 @@ public class AdminAnalyticsOverviewService {
         return toDistributionItems(counts, installations.size(), "NODE");
     }
 
-    private List<AdminAnalyticsInsightResponse> buildTopInsights(
-            List<NodeInstallation> installations,
-            Map<String, NodeStatusSnapshot> nodeStatusByNodeId,
-            Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId
-    ) {
-        return installations.stream()
-                .flatMap(installation -> Stream.of(
-                        buildCo2Insight(installation, spaceStatusBySpaceId),
-                        buildOfflineInsight(installation, nodeStatusByNodeId),
-                        buildWifiInsight(installation, nodeStatusByNodeId)
-                ))
-                .filter(Objects::nonNull)
-                .sorted(Comparator
-                        .comparingInt(InsightCandidate::priority)
-                        .thenComparing(InsightCandidate::score, Comparator.reverseOrder()))
-                .limit(TOP_INSIGHT_LIMIT)
-                .map(InsightCandidate::response)
-                .toList();
-    }
-
-    private InsightCandidate buildCo2Insight(
-            NodeInstallation installation,
-            Map<Long, SpaceStatusSnapshot> spaceStatusBySpaceId
-    ) {
-        SpaceStatusSnapshot snapshot = spaceStatusBySpaceId.get(installation.getSpace().getId());
-        if (snapshot == null || snapshot.getCo2Ppm() == null || snapshot.getCo2Ppm() <= 1_000) {
-            return null;
-        }
-        if (Boolean.FALSE.equals(snapshot.getHumanDetected())) {
-            return null;
-        }
-
-        boolean bad = snapshot.getCo2Ppm() > 1_500;
-        return new InsightCandidate(
-                toInsightResponse(
-                        "CO2",
-                        bad ? "BAD" : "WARNING",
-                        installation,
-                        "CO2 " + snapshot.getCo2Ppm() + "ppm",
-                        bad
-                                ? "CO2가 1,500ppm을 초과했습니다. 환기가 필요합니다."
-                                : "CO2가 1,000ppm을 넘었습니다. 환기 권장을 검토해주세요."
-                ),
-                bad ? 10 : 30,
-                snapshot.getCo2Ppm()
-        );
-    }
-
-    private InsightCandidate buildOfflineInsight(
-            NodeInstallation installation,
-            Map<String, NodeStatusSnapshot> nodeStatusByNodeId
-    ) {
-        ConnectionStatus status = findConnectionStatus(installation, nodeStatusByNodeId);
-        if (status != ConnectionStatus.OFFLINE) {
-            return null;
-        }
-
-        return new InsightCandidate(
-                toInsightResponse(
-                        "NODE",
-                        "WARNING",
-                        installation,
-                        "노드 오프라인",
-                        "노드가 오프라인입니다. 전원 또는 네트워크 상태를 확인해주세요."
-                ),
-                20,
-                0
-        );
-    }
-
-    private InsightCandidate buildWifiInsight(
-            NodeInstallation installation,
-            Map<String, NodeStatusSnapshot> nodeStatusByNodeId
-    ) {
-        NodeStatusSnapshot snapshot = nodeStatusByNodeId.get(installation.getNode().getId());
-        Integer wifiRssi = snapshot == null ? null : snapshot.getWifiRssi();
-        if (wifiRssi == null || wifiRssi > -70) {
-            return null;
-        }
-
-        boolean veryWeak = wifiRssi <= -80;
-        return new InsightCandidate(
-                toInsightResponse(
-                        "WIFI",
-                        veryWeak ? "BAD" : "WARNING",
-                        installation,
-                        "Wi-Fi " + wifiRssi + " dBm",
-                        "Wi-Fi 신호가 약합니다. 설치 위치를 점검해주세요."
-                ),
-                veryWeak ? 40 : 50,
-                Math.abs(wifiRssi)
-        );
-    }
-
-    private AdminAnalyticsInsightResponse toInsightResponse(
-            String type,
-            String severity,
-            NodeInstallation installation,
-            String titlePrefix,
-            String message
-    ) {
-        Space space = installation.getSpace();
-        return new AdminAnalyticsInsightResponse(
-                type,
-                severity,
-                titlePrefix + " - " + space.getCode() + " " + space.getBuilding().getName() + " " + space.getName(),
-                message,
-                installation.getNode().getId(),
-                space.getId(),
-                space.getCode(),
-                space.getName(),
-                space.getBuilding().getName()
-        );
-    }
-
     private ConnectionStatus findConnectionStatus(
             NodeInstallation installation,
             Map<String, NodeStatusSnapshot> nodeStatusByNodeId
@@ -501,13 +365,6 @@ public class AdminAnalyticsOverviewService {
             }
             return WEAK;
         }
-    }
-
-    private record InsightCandidate(
-            AdminAnalyticsInsightResponse response,
-            int priority,
-            int score
-    ) {
     }
 
     private record OverviewSnapshotContext(

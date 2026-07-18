@@ -12,7 +12,7 @@ import java.util.List;
 
 @Configuration
 @RequiredArgsConstructor
-@EnableConfigurationProperties(CorsProperties.class)
+@EnableConfigurationProperties({CorsProperties.class, InternalApiProperties.class})
 public class CorsConfig {
 
     private final CorsProperties corsProperties;
