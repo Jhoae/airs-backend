@@ -41,6 +41,20 @@ co2Count =
     |> aggregateWindow(every: 1h, fn: count, createEmpty: false)
     |> set(key: "_field", value: "co2_count")
 
-union(tables: [co2Mean, co2Min, co2Max, co2Count])
+// Write each field stream separately. `count` is an integer while the three
+// statistical values are floats, so unioning them would cause a Flux type clash.
+co2Mean
+  |> set(key: "_measurement", value: "sensor_rollup_1h")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+co2Min
+  |> set(key: "_measurement", value: "sensor_rollup_1h")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+co2Max
+  |> set(key: "_measurement", value: "sensor_rollup_1h")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+co2Count
   |> set(key: "_measurement", value: "sensor_rollup_1h")
   |> to(bucket: rollupBucket, tagColumns: ["node_id"])
