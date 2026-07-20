@@ -132,7 +132,7 @@ class Dht22SnapshotUpdateServiceTest {
 
         dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload);
 
-        LocalDateTime receivedAt = LocalDateTime.ofInstant(timestamp, ZoneId.systemDefault());
+        LocalDateTime receivedAt = LocalDateTime.ofInstant(timestamp, ZoneId.of("Asia/Seoul"));
         assertEquals(ConnectionStatus.ONLINE, nodeStatus.getConnectionStatus());
         assertEquals(SensorStatus.ABNORMAL, nodeStatus.getSensorStatus());
         assertEquals("OK", nodeStatus.getDht22Status());
