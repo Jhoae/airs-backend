@@ -33,6 +33,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class InfluxDht22Reader {
 
+    private static final String DAILY_CO2_ROLLUP_MEASUREMENT = "sensor_rollup_1d";
+
     private final InfluxProperties influxProperties;
     private InfluxDBClient influxDBClient;
     private QueryApi queryApi;
@@ -152,25 +154,7 @@ public class InfluxDht22Reader {
     }
     // 노드 상세 페이지
     public List<Co2TrendItem> readCo2Trend(String nodeId, Instant from, Instant to, String window) {
-        if (nodeId == null || nodeId.isBlank()) {
-            throw new IllegalArgumentException("nodeId가 비어 있습니다.");
-        }
-
-        if (from == null) {
-            throw new IllegalArgumentException("from이 비어 있습니다.");
-        }
-
-        if (to == null) {
-            throw new IllegalArgumentException("to가 비어 있습니다.");
-        }
-
-        if (from.isAfter(to)) {
-            throw new IllegalArgumentException("from은 to보다 이후일 수 없습니다.");
-        }
-
-        if (window == null || !window.matches("\\d+[smhd]")) {
-            throw new IllegalArgumentException("window 형식이 올바르지 않습니다.");
-        }
+        validateCo2TrendRequest(nodeId, from, to, window);
 
         if (queryApi == null) {
             throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
@@ -200,6 +184,91 @@ public class InfluxDht22Reader {
                 .flatMap(table -> table.getRecords().stream())
                 .map(record -> toCo2TrendItem(record))
                 .toList();
+    }
+
+    public List<Co2TrendItem> readCo2TrendWithDailyRollup(String nodeId, Instant from, Instant to) {
+        validateCo2TrendRequest(nodeId, from, to, "1d");
+
+        List<Co2TrendItem> rollupTrend;
+        try {
+            rollupTrend = readDailyRollup(nodeId, from, to);
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "CO2 1일 rollup 조회에 실패해 raw 데이터를 사용합니다. bucket={}, reason={}",
+                    influxProperties.getRollupBucket(),
+                    exception.getMessage()
+            );
+            return readCo2Trend(nodeId, from, to, "1d");
+        }
+        if (rollupTrend.isEmpty()) {
+            return readCo2Trend(nodeId, from, to, "1d");
+        }
+
+        Instant firstRollupTime = rollupTrend.get(0).getTimestamp();
+        Instant lastRollupTime = rollupTrend.get(rollupTrend.size() - 1).getTimestamp();
+        List<Co2TrendItem> rawBeforeRollup = from.isBefore(firstRollupTime)
+                ? readCo2Trend(nodeId, from, firstRollupTime, "1d")
+                : List.of();
+        List<Co2TrendItem> rawAfterRollup = lastRollupTime.isBefore(to)
+                ? readCo2Trend(nodeId, lastRollupTime, to, "1d")
+                : List.of();
+
+        // 완료된 날짜는 rollup, 과거 공백과 오늘은 raw로 보완한다.
+        Map<Instant, Co2TrendItem> mergedTrendByTime = new TreeMap<>();
+        rawBeforeRollup.forEach(item -> mergedTrendByTime.put(item.getTimestamp(), item));
+        rawAfterRollup.forEach(item -> mergedTrendByTime.put(item.getTimestamp(), item));
+        rollupTrend.forEach(item -> mergedTrendByTime.put(item.getTimestamp(), item));
+
+        return List.copyOf(mergedTrendByTime.values());
+    }
+
+    private List<Co2TrendItem> readDailyRollup(String nodeId, Instant from, Instant to) {
+        if (queryApi == null) {
+            throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
+        }
+
+        String query = """
+                from(bucket: "%s")
+                  |> range(start: time(v: "%s"), stop: time(v: "%s"))
+                  |> filter(fn: (r) => r._measurement == "%s")
+                  |> filter(fn: (r) => r.%s == "%s")
+                  |> filter(fn: (r) => r._field == "co2_mean")
+                  |> sort(columns: ["_time"])
+                """.formatted(
+                influxProperties.getRollupBucket(),
+                from,
+                to,
+                DAILY_CO2_ROLLUP_MEASUREMENT,
+                influxProperties.getNodeIdTag(),
+                nodeId.replace("\"", "\\\"")
+        );
+
+        return queryApi.query(query, influxProperties.getOrg()).stream()
+                .flatMap(table -> table.getRecords().stream())
+                .map(this::toCo2TrendItem)
+                .toList();
+    }
+
+    private void validateCo2TrendRequest(String nodeId, Instant from, Instant to, String window) {
+        if (nodeId == null || nodeId.isBlank()) {
+            throw new IllegalArgumentException("nodeId가 비어 있습니다.");
+        }
+
+        if (from == null) {
+            throw new IllegalArgumentException("from이 비어 있습니다.");
+        }
+
+        if (to == null) {
+            throw new IllegalArgumentException("to가 비어 있습니다.");
+        }
+
+        if (from.isAfter(to)) {
+            throw new IllegalArgumentException("from은 to보다 이후일 수 없습니다.");
+        }
+
+        if (window == null || !window.matches("\\d+[smhd]")) {
+            throw new IllegalArgumentException("window 형식이 올바르지 않습니다.");
+        }
     }
 
     public List<Co2TrendItem> readAverageCo2Trend(List<String> nodeIds, Instant from, Instant to, String window) {

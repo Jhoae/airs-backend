@@ -49,8 +49,10 @@ public class AdminNodeCo2TrendService {
         Instant to = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         Instant from = resolveFrom(to, resolvedPeriod, hours);
         String resolvedWindow = resolveWindow(resolvedPeriod, window);
-        List<AdminNodeCo2TrendPointResponse> points = influxDht22Reader
-                .readCo2Trend(nodeId, from, to, resolvedWindow)
+        List<Co2TrendItem> trendItems = usesDailyRollup(resolvedPeriod)
+                ? influxDht22Reader.readCo2TrendWithDailyRollup(nodeId, from, to)
+                : influxDht22Reader.readCo2Trend(nodeId, from, to, resolvedWindow);
+        List<AdminNodeCo2TrendPointResponse> points = trendItems
                 .stream()
                 .map(this::toPointResponse)
                 .toList();
@@ -93,6 +95,11 @@ public class AdminNodeCo2TrendService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "window 형식이 올바르지 않습니다.");
         }
         return window;
+    }
+
+    private boolean usesDailyRollup(AdminNodeCo2TrendPeriod period) {
+        return period == AdminNodeCo2TrendPeriod.SIX_MONTHS
+                || period == AdminNodeCo2TrendPeriod.ONE_YEAR;
     }
 
     private void validateSameCampus(User user, NodeInstallation installation) {

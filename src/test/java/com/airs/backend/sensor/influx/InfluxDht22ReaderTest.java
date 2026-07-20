@@ -214,6 +214,46 @@ class InfluxDht22ReaderTest {
     }
 
     @Test
+    void readCo2TrendWithDailyRollup_should_merge_completed_days_with_latest_raw_data() {
+        Instant from = Instant.parse("2026-07-01T00:00:00Z");
+        Instant to = Instant.parse("2026-07-04T12:00:00Z");
+
+        FluxTable rollupTable = mock(FluxTable.class);
+        FluxRecord rollupRecord = mock(FluxRecord.class);
+        when(rollupRecord.getValue()).thenReturn(808.4);
+        when(rollupRecord.getTime()).thenReturn(Instant.parse("2026-07-03T00:00:00Z"));
+        when(rollupTable.getRecords()).thenReturn(List.of(rollupRecord));
+
+        FluxTable rawTailTable = mock(FluxTable.class);
+        FluxRecord rawTailRecord = mock(FluxRecord.class);
+        when(rawTailRecord.getValue()).thenReturn(901.6);
+        when(rawTailRecord.getTime()).thenReturn(Instant.parse("2026-07-04T12:00:00Z"));
+        when(rawTailTable.getRecords()).thenReturn(List.of(rawTailRecord));
+
+        when(queryApi.query(anyString(), eq("airs-org")))
+                .thenReturn(List.of(rollupTable))
+                .thenReturn(List.of())
+                .thenReturn(List.of(rawTailTable));
+
+        List<Co2TrendItem> trend = influxDht22Reader.readCo2TrendWithDailyRollup("node_01", from, to);
+
+        assertEquals(2, trend.size());
+        assertEquals(Instant.parse("2026-07-03T00:00:00Z"), trend.get(0).getTimestamp());
+        assertEquals(808, trend.get(0).getCo2Ppm());
+        assertEquals(Instant.parse("2026-07-04T12:00:00Z"), trend.get(1).getTimestamp());
+        assertEquals(902, trend.get(1).getCo2Ppm());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi, times(3)).query(queryCaptor.capture(), eq("airs-org"));
+        List<String> queries = queryCaptor.getAllValues();
+        assertEquals(true, queries.get(0).contains("from(bucket: \"airs_rollup\")"));
+        assertEquals(true, queries.get(0).contains("r._measurement == \"sensor_rollup_1d\""));
+        assertEquals(true, queries.get(0).contains("r._field == \"co2_mean\""));
+        assertEquals(true, queries.get(2).contains("from(bucket: \"airs\")"));
+        assertEquals(true, queries.get(2).contains("aggregateWindow(every: 1d, fn: mean, createEmpty: false)"));
+    }
+
+    @Test
     void readAiSensorTrend_should_query_recent_measurements_and_calculate_ai_trend_values() {
         Instant to = Instant.parse("2026-07-09T01:30:00Z");
 

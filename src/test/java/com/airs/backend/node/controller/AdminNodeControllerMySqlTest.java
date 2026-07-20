@@ -279,6 +279,33 @@ class AdminNodeControllerMySqlTest {
     }
 
     @Test
+    void getCo2Trend_should_read_daily_rollup_for_six_month_period() throws Exception {
+        Long adminId = saveNodeListFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+        when(influxDht22Reader.readCo2TrendWithDailyRollup(eq("AIRS-2483"), any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(
+                        new Co2TrendItem(Instant.parse("2026-05-28T00:00:00Z"), 900),
+                        new Co2TrendItem(Instant.parse("2026-05-29T00:00:00Z"), 980)
+                ));
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/co2-trend")
+                        .param("period", "6mo")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nodeId").value("AIRS-2483"))
+                .andExpect(jsonPath("$.period").value("6mo"))
+                .andExpect(jsonPath("$.window").value("1d"))
+                .andExpect(jsonPath("$.points[0].co2Ppm").value(900))
+                .andExpect(jsonPath("$.points[1].co2Ppm").value(980));
+
+        verify(influxDht22Reader).readCo2TrendWithDailyRollup(
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class)
+        );
+    }
+
+    @Test
     void getCo2Trend_should_return_bad_request_when_window_is_invalid() throws Exception {
         Long adminId = saveNodeListFixture();
         String accessToken = jwtTokenProvider.generateAccessToken(adminId);

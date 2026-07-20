@@ -467,7 +467,8 @@ paths:
         사용합니다(1d=10m, 5d=1h, 1mo=6h, 6mo=1d, 1y=1d). period를 생략하면 최근 hours시간을
         window 간격으로 집계합니다(기본 hours=6, window=5m). period와 hours/window를 함께 보내도
         오류가 나지 않으며, period가 우선되어 hours와 window는 무시됩니다. 예를 들어
-        period=5d&hours=6&window=30s 요청은 최근 5일을 1시간 단위로 반환합니다.
+        period=5d&hours=6&window=30s 요청은 최근 5일을 1시간 단위로 반환합니다. 6mo와 1y는
+        완료된 날짜의 sensor_rollup_1d 집계를 우선 읽고, 오늘 또는 집계 공백은 raw telemetry로 보완합니다.
       security:
         - bearerAuth: []
       parameters:
