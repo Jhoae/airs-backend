@@ -1,10 +1,10 @@
 import "date"
 
-// Reprocess the two most recent completed hours. A partial current hour would
-// receive the task execution time as its timestamp and create unstable points.
+// Aggregate only the most recently completed hour. The one-minute offset gives
+// boundary telemetry writes time to reach InfluxDB without reprocessing history.
 option task = {
   name: "airs-rollup-1h",
-  every: 15m,
+  every: 1h,
   offset: 1m,
 }
 
@@ -12,11 +12,11 @@ rawBucket = "airs"
 rollupBucket = "airs_rollup"
 
 currentHourStart = date.truncate(t: now(), unit: 1h)
-reprocessStart = date.add(d: -2h, to: currentHourStart)
+completedHourStart = date.add(d: -1h, to: currentHourStart)
 
 rawCo2 =
   from(bucket: rawBucket)
-    |> range(start: reprocessStart, stop: currentHourStart)
+    |> range(start: completedHourStart, stop: currentHourStart)
     |> filter(fn: (r) => r._measurement == "sensor_data")
     |> filter(fn: (r) => r._field == "co2_ppm")
     |> keep(columns: ["_time", "_value", "node_id"])

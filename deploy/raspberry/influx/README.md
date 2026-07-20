@@ -11,7 +11,7 @@ tag:             node_id
 fields:          co2_mean, co2_min, co2_max, co2_count
 ```
 
-The task runs every 15 minutes and reprocesses the two most recently completed hours. It therefore updates the same node/hour point when a delayed telemetry message is eventually stored, without creating a partial-hour point with the task execution time as its timestamp.
+The task runs once per hour, one minute after the hour boundary, and aggregates only the preceding completed hour. It never includes the current partial hour, so its timestamp remains on an exact hour boundary. This intentionally does not repair telemetry that arrives after that one-time aggregation; raw `sensor_data` remains available for a later manual backfill if needed.
 
 ## Deploy or update
 
