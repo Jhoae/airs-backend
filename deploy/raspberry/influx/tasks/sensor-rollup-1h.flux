@@ -1,7 +1,7 @@
 import "date"
 
-// Reprocess completed hours as well as the current partial hour so delayed MQTT
-// writes can correct an already-created rollup point on the next task run.
+// Reprocess the two most recent completed hours. A partial current hour would
+// receive the task execution time as its timestamp and create unstable points.
 option task = {
   name: "airs-rollup-1h",
   every: 15m,
@@ -16,7 +16,7 @@ reprocessStart = date.add(d: -2h, to: currentHourStart)
 
 rawCo2 =
   from(bucket: rawBucket)
-    |> range(start: reprocessStart, stop: now())
+    |> range(start: reprocessStart, stop: currentHourStart)
     |> filter(fn: (r) => r._measurement == "sensor_data")
     |> filter(fn: (r) => r._field == "co2_ppm")
     |> keep(columns: ["_time", "_value", "node_id"])
