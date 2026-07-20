@@ -74,8 +74,11 @@ jobs:
           git checkout main
           git pull --ff-only origin main
 
+          # Git에서 관리하는 운영 compose를 실제 배포 compose에 반영한다.
+          cp deploy/raspberry/docker-compose.yml /home/sogangairs/service/compose/docker-compose.yml
+
           cd /home/sogangairs/service/compose
-          docker compose up -d --build spring
+          docker compose up -d --build redis spring
 
           for attempt in {1..30}; do
             if curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"'; then

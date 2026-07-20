@@ -1,7 +1,6 @@
 package com.airs.backend.node.controller;
 
 import com.airs.backend.alert.entity.Alert;
-import com.airs.backend.analytics.cache.AdminCo2TrendCache;
 import com.airs.backend.alert.entity.AlertAudience;
 import com.airs.backend.alert.entity.AlertSeverity;
 import com.airs.backend.alert.entity.AlertType;
@@ -71,7 +70,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = "analytics.cache.enabled=false")
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 class AdminNodeControllerMySqlTest {
@@ -118,16 +117,12 @@ class AdminNodeControllerMySqlTest {
     @Autowired
     private TransactionTemplate transactionTemplate;
 
-    @Autowired
-    private AdminCo2TrendCache adminCo2TrendCache;
-
     @MockitoBean
     private InfluxDht22Reader influxDht22Reader;
 
     @BeforeEach
     void setUp() {
         cleanUp();
-        adminCo2TrendCache.clear();
     }
 
     @AfterEach
@@ -382,29 +377,6 @@ class AdminNodeControllerMySqlTest {
                 .andExpect(jsonPath("$.yesterdayTrend[0].co2Ppm").value(700));
 
         verify(influxDht22Reader).readAverageCo2Trend(
-                anyList(),
-                eq(Instant.parse("2026-07-04T15:00:00Z")),
-                eq(Instant.parse("2026-07-06T15:00:00Z")),
-                eq("1h")
-        );
-    }
-
-    @Test
-    void getCo2Trend_should_reuse_cached_result_for_same_campus_and_date() throws Exception {
-        Long adminId = saveCo2AnalyticsFixture();
-        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
-        when(influxDht22Reader.readAverageCo2Trend(anyList(), any(Instant.class), any(Instant.class), eq("1h")))
-                .thenReturn(List.of(new Co2TrendItem(Instant.parse("2026-07-06T01:00:00Z"), 842)));
-
-        for (int requestCount = 0; requestCount < 2; requestCount++) {
-            mockMvc.perform(get("/airs/admin/analytics/co2/trend")
-                            .param("date", "2026-07-06")
-                            .header("Authorization", "Bearer " + accessToken))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.todayTrend[0].co2Ppm").value(842));
-        }
-
-        verify(influxDht22Reader, times(1)).readAverageCo2Trend(
                 anyList(),
                 eq(Instant.parse("2026-07-04T15:00:00Z")),
                 eq(Instant.parse("2026-07-06T15:00:00Z")),

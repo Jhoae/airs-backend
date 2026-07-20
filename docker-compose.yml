@@ -50,6 +50,17 @@ services:
       - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mosquitto-data:/mosquitto/data
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: airs-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -63,6 +74,8 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
+      redis:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${AIRS_MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
       SPRING_DATASOURCE_USERNAME: ${AIRS_MYSQL_USER}
@@ -89,9 +102,14 @@ services:
       AIRS_AI_EVALUATION_SCHEDULER_ENABLED: ${AIRS_AI_EVALUATION_SCHEDULER_ENABLED:-true}
       AIRS_AI_EVALUATION_SCHEDULER_INITIAL_DELAY_MS: ${AIRS_AI_EVALUATION_SCHEDULER_INITIAL_DELAY_MS:-60000}
       AIRS_AI_EVALUATION_SCHEDULER_FIXED_DELAY_MS: ${AIRS_AI_EVALUATION_SCHEDULER_FIXED_DELAY_MS:-600000}
+      AIRS_REDIS_HOST: ${AIRS_REDIS_HOST:-redis}
+      AIRS_REDIS_PORT: ${AIRS_REDIS_PORT:-6379}
+      AIRS_REDIS_CONNECT_TIMEOUT: ${AIRS_REDIS_CONNECT_TIMEOUT:-500ms}
+      AIRS_REDIS_TIMEOUT: ${AIRS_REDIS_TIMEOUT:-500ms}
+      AIRS_ANALYTICS_CACHE_ENABLED: ${AIRS_ANALYTICS_CACHE_ENABLED:-true}
       AIRS_ANALYTICS_TREND_TODAY_TTL_SECONDS: ${AIRS_ANALYTICS_TREND_TODAY_TTL_SECONDS:-30}
       AIRS_ANALYTICS_TREND_HISTORY_TTL_SECONDS: ${AIRS_ANALYTICS_TREND_HISTORY_TTL_SECONDS:-1800}
-      AIRS_ANALYTICS_TREND_CACHE_MAXIMUM_SIZE: ${AIRS_ANALYTICS_TREND_CACHE_MAXIMUM_SIZE:-200}
+      AIRS_ANALYTICS_TREND_CACHE_KEY_PREFIX: ${AIRS_ANALYTICS_TREND_CACHE_KEY_PREFIX:-airs:analytics:co2-trend:v1}
       JAVA_TOOL_OPTIONS: ${AIRS_JAVA_TOOL_OPTIONS}
       TZ: Asia/Seoul
     ports:

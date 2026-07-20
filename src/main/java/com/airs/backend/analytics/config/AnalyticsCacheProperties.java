@@ -11,7 +11,8 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "analytics.cache")
 public class AnalyticsCacheProperties {
 
+    private boolean enabled = true;
     private long trendTodayTtlSeconds = 30;
     private long trendHistoryTtlSeconds = 1800;
-    private long trendMaximumSize = 200;
+    private String trendKeyPrefix = "airs:analytics:co2-trend:v1";
 }

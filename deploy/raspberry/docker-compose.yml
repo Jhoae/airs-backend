@@ -112,6 +112,22 @@ services:
       start_period: 10s
 
   # =====================================================================
+  # Redis - 여러 Spring 인스턴스가 함께 사용하는 재생성 가능한 조회 캐시
+  # =====================================================================
+  redis:
+    image: redis:7.4-alpine
+    container_name: airs-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    networks:
+      - airs-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # =====================================================================
   # Spring Boot - MQTT 구독 + InfluxDB/MySQL 게이트웨이 + REST API
   # =====================================================================
   spring:
@@ -127,6 +143,8 @@ services:
       influxdb:
         condition: service_healthy
       mosquitto:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8080:8080"
@@ -158,9 +176,14 @@ services:
       MQTT_TOPIC: airs/node/+/telemetry
       OCCUPANCY_STALE_AFTER_MINUTES: "10"
       OCCUPANCY_INFLUX_WRITE_ENABLED: "true"
+      AIRS_REDIS_HOST: ${AIRS_REDIS_HOST:-redis}
+      AIRS_REDIS_PORT: ${AIRS_REDIS_PORT:-6379}
+      AIRS_REDIS_CONNECT_TIMEOUT: ${AIRS_REDIS_CONNECT_TIMEOUT:-500ms}
+      AIRS_REDIS_TIMEOUT: ${AIRS_REDIS_TIMEOUT:-500ms}
+      AIRS_ANALYTICS_CACHE_ENABLED: ${AIRS_ANALYTICS_CACHE_ENABLED:-true}
       AIRS_ANALYTICS_TREND_TODAY_TTL_SECONDS: ${AIRS_ANALYTICS_TREND_TODAY_TTL_SECONDS:-30}
       AIRS_ANALYTICS_TREND_HISTORY_TTL_SECONDS: ${AIRS_ANALYTICS_TREND_HISTORY_TTL_SECONDS:-1800}
-      AIRS_ANALYTICS_TREND_CACHE_MAXIMUM_SIZE: ${AIRS_ANALYTICS_TREND_CACHE_MAXIMUM_SIZE:-200}
+      AIRS_ANALYTICS_TREND_CACHE_KEY_PREFIX: ${AIRS_ANALYTICS_TREND_CACHE_KEY_PREFIX:-airs:analytics:co2-trend:v1}
 
     mem_limit: 1500m
     cpus: 2.0
