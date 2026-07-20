@@ -1,6 +1,7 @@
 package com.airs.backend.node.controller;
 
 import com.airs.backend.alert.entity.Alert;
+import com.airs.backend.analytics.cache.AdminCo2TrendCache;
 import com.airs.backend.alert.entity.AlertAudience;
 import com.airs.backend.alert.entity.AlertSeverity;
 import com.airs.backend.alert.entity.AlertType;
@@ -59,6 +60,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -116,12 +118,16 @@ class AdminNodeControllerMySqlTest {
     @Autowired
     private TransactionTemplate transactionTemplate;
 
+    @Autowired
+    private AdminCo2TrendCache adminCo2TrendCache;
+
     @MockitoBean
     private InfluxDht22Reader influxDht22Reader;
 
     @BeforeEach
     void setUp() {
         cleanUp();
+        adminCo2TrendCache.clear();
     }
 
     @AfterEach
@@ -353,14 +359,12 @@ class AdminNodeControllerMySqlTest {
         Long adminId = saveCo2AnalyticsFixture();
         String accessToken = jwtTokenProvider.generateAccessToken(adminId);
         when(influxDht22Reader.readAverageCo2Trend(anyList(), any(Instant.class), any(Instant.class), eq("1h")))
-                .thenReturn(
-                        List.of(
-                                new Co2TrendItem(Instant.parse("2026-07-06T00:00:00Z"), 842),
-                                new Co2TrendItem(Instant.parse("2026-07-06T01:00:00Z"), 901)
-                        ),
-                        List.of(
-                                new Co2TrendItem(Instant.parse("2026-07-05T00:00:00Z"), 700)
-                        )
+                .thenReturn(List.of(
+                        new Co2TrendItem(Instant.parse("2026-07-05T15:00:00Z"), 700),
+                        new Co2TrendItem(Instant.parse("2026-07-06T00:00:00Z"), 842),
+                        new Co2TrendItem(Instant.parse("2026-07-06T01:00:00Z"), 901),
+                        new Co2TrendItem(Instant.parse("2026-07-06T15:00:00Z"), 920)
+                )
                 );
 
         mockMvc.perform(get("/airs/admin/analytics/co2/trend")
@@ -372,8 +376,40 @@ class AdminNodeControllerMySqlTest {
                 .andExpect(jsonPath("$.todayTrend[0].timestamp").value("2026-07-06T00:00:00Z"))
                 .andExpect(jsonPath("$.todayTrend[0].co2Ppm").value(842))
                 .andExpect(jsonPath("$.todayTrend[1].co2Ppm").value(901))
-                .andExpect(jsonPath("$.yesterdayTrend[0].timestamp").value("2026-07-05T00:00:00Z"))
+                .andExpect(jsonPath("$.todayTrend[2].timestamp").value("2026-07-06T15:00:00Z"))
+                .andExpect(jsonPath("$.todayTrend[2].co2Ppm").value(920))
+                .andExpect(jsonPath("$.yesterdayTrend[0].timestamp").value("2026-07-05T15:00:00Z"))
                 .andExpect(jsonPath("$.yesterdayTrend[0].co2Ppm").value(700));
+
+        verify(influxDht22Reader).readAverageCo2Trend(
+                anyList(),
+                eq(Instant.parse("2026-07-04T15:00:00Z")),
+                eq(Instant.parse("2026-07-06T15:00:00Z")),
+                eq("1h")
+        );
+    }
+
+    @Test
+    void getCo2Trend_should_reuse_cached_result_for_same_campus_and_date() throws Exception {
+        Long adminId = saveCo2AnalyticsFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+        when(influxDht22Reader.readAverageCo2Trend(anyList(), any(Instant.class), any(Instant.class), eq("1h")))
+                .thenReturn(List.of(new Co2TrendItem(Instant.parse("2026-07-06T01:00:00Z"), 842)));
+
+        for (int requestCount = 0; requestCount < 2; requestCount++) {
+            mockMvc.perform(get("/airs/admin/analytics/co2/trend")
+                            .param("date", "2026-07-06")
+                            .header("Authorization", "Bearer " + accessToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.todayTrend[0].co2Ppm").value(842));
+        }
+
+        verify(influxDht22Reader, times(1)).readAverageCo2Trend(
+                anyList(),
+                eq(Instant.parse("2026-07-04T15:00:00Z")),
+                eq(Instant.parse("2026-07-06T15:00:00Z")),
+                eq("1h")
+        );
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.airs.backend.analytics.service;
 
 import com.airs.backend.admin.service.AdminAccessService;
+import com.airs.backend.analytics.cache.AdminCo2TrendCache;
 import com.airs.backend.analytics.dto.AdminCo2DistributionResponse;
 import com.airs.backend.analytics.dto.AdminCo2DistributionItemResponse;
 import com.airs.backend.analytics.dto.AdminCo2SummaryResponse;
@@ -46,6 +47,7 @@ public class AdminCo2AnalyticsService {
     private final SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
     private final NodeInstallationRepository nodeInstallationRepository;
     private final InfluxDht22Reader influxDht22Reader;
+    private final AdminCo2TrendCache adminCo2TrendCache;
 
     public AdminCo2SummaryResponse getSummary(Long userId, LocalDate date) {
         User admin = adminAccessService.getApprovedAdmin(userId);
@@ -83,13 +85,18 @@ public class AdminCo2AnalyticsService {
         User admin = adminAccessService.getApprovedAdmin(userId);
         LocalDate targetDate = date == null ? LocalDate.now(SERVICE_ZONE) : date;
         Co2SnapshotContext context = loadCo2SnapshotContext(admin.getCampusId());
+        DailyCo2TrendSections trendSections = readTodayAndYesterdayTrend(
+                admin.getCampusId(),
+                context.activeNodeIds(),
+                targetDate
+        );
 
         return new AdminCo2TrendResponse(
                 admin.getCampusId(),
                 admin.getCampus().getName(),
                 targetDate,
-                readDailyTrend(context.activeNodeIds(), targetDate),
-                readDailyTrend(context.activeNodeIds(), targetDate.minusDays(1))
+                trendSections.todayTrend(),
+                trendSections.yesterdayTrend()
         );
     }
 
@@ -225,15 +232,41 @@ public class AdminCo2AnalyticsService {
                 .toList();
     }
 
-    private List<AdminCo2TrendPointResponse> readDailyTrend(List<String> nodeIds, LocalDate date) {
+    private DailyCo2TrendSections readTodayAndYesterdayTrend(
+            Long campusId,
+            List<String> nodeIds,
+            LocalDate targetDate
+    ) {
         if (nodeIds.isEmpty()) {
-            return List.of();
+            return new DailyCo2TrendSections(List.of(), List.of());
         }
 
-        Instant from = date.atStartOfDay(SERVICE_ZONE).toInstant();
-        Instant to = date.plusDays(1).atStartOfDay(SERVICE_ZONE).toInstant();
-        return influxDht22Reader.readAverageCo2Trend(nodeIds, from, to, DAILY_TREND_WINDOW)
-                .stream()
+        LocalDate yesterday = targetDate.minusDays(1);
+        Instant from = yesterday.atStartOfDay(SERVICE_ZONE).toInstant();
+        Instant to = targetDate.plusDays(1).atStartOfDay(SERVICE_ZONE).toInstant();
+        List<Co2TrendItem> trendItems = adminCo2TrendCache.getOrLoad(
+                campusId,
+                targetDate,
+                () -> influxDht22Reader.readAverageCo2Trend(nodeIds, from, to, DAILY_TREND_WINDOW)
+        );
+
+        return new DailyCo2TrendSections(
+                toDailyTrendPoints(trendItems, targetDate),
+                toDailyTrendPoints(trendItems, yesterday)
+        );
+    }
+
+    private List<AdminCo2TrendPointResponse> toDailyTrendPoints(
+            List<Co2TrendItem> trendItems,
+            LocalDate date
+    ) {
+        Instant dayStart = date.atStartOfDay(SERVICE_ZONE).toInstant();
+        Instant dayEnd = date.plusDays(1).atStartOfDay(SERVICE_ZONE).toInstant();
+
+        return trendItems.stream()
+                // Flux aggregateWindow's default timestamp is each bucket's end, so include dayEnd.
+                .filter(item -> item.getTimestamp().isAfter(dayStart) && !item.getTimestamp().isAfter(dayEnd))
+                .sorted(java.util.Comparator.comparing(Co2TrendItem::getTimestamp))
                 .map(this::toTrendPointResponse)
                 .toList();
     }
@@ -309,6 +342,12 @@ public class AdminCo2AnalyticsService {
             List<Space> spaces,
             List<String> activeNodeIds,
             Map<Long, SpaceStatusSnapshot> snapshotsBySpaceId
+    ) {
+    }
+
+    private record DailyCo2TrendSections(
+            List<AdminCo2TrendPointResponse> todayTrend,
+            List<AdminCo2TrendPointResponse> yesterdayTrend
     ) {
     }
 }
