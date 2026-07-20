@@ -32,14 +32,12 @@ raw =
     |> filter(fn: (r) => r.node_id == "${NODE_ID}")
     |> filter(fn: (r) => r._field == "co2_ppm")
 
-rawMean = raw |> mean() |> set(key: "metric", value: "raw_mean")
-rawMin = raw |> min() |> set(key: "metric", value: "raw_min")
-rawMax = raw |> max() |> set(key: "metric", value: "raw_max")
-rawCount = raw |> count() |> set(key: "metric", value: "raw_count")
-
-union(tables: [rawMean, rawMin, rawMax, rawCount])
-  |> keep(columns: ["metric", "_value"])
-  |> yield(name: "raw")
+// Keep the integer count separate from floating-point aggregates. Flux rejects
+// a union when the shared _value column has both integer and float types.
+raw |> mean() |> yield(name: "raw_mean")
+raw |> min() |> yield(name: "raw_min")
+raw |> max() |> yield(name: "raw_max")
+raw |> count() |> yield(name: "raw_count")
 
 from(bucket: "${ROLLUP_BUCKET}")
   |> range(start: time(v: "${ROLLUP_RANGE_START}"), stop: time(v: "${ROLLUP_RANGE_STOP}"))
