@@ -84,15 +84,25 @@ jobs:
           cd /home/sogangairs/service/compose
           docker compose up -d --build redis spring
 
+          spring_healthy=false
           for attempt in {1..30}; do
             if curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"'; then
-              docker compose ps spring
-              exit 0
+              spring_healthy=true
+              break
             fi
             sleep 2
           done
 
-          docker compose ps
-          docker logs --tail=200 airs-spring
-          exit 1
+          if [[ "${spring_healthy}" != "true" ]]; then
+            docker compose ps
+            docker logs --tail=200 airs-spring
+            exit 1
+          fi
+
+          docker compose ps spring
+
+          # Keep the active bind-mounted Caddyfile synchronized with Git only
+          # after validating the candidate and confirming Spring is healthy.
+          docker compose up -d caddy
+          bash /home/sogangairs/service/backend/deploy/raspberry/sync-caddyfile.sh
           REMOTE

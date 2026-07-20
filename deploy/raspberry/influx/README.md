@@ -24,6 +24,8 @@ bash deploy/raspberry/influx/upsert-rollup-task.sh
 
 The script creates `airs_rollup` with infinite retention only when it does not exist. It then creates the `airs-rollup-1h` task, or updates the existing task with the Git-managed Flux file. It reads the authenticated Influx CLI configuration already held by the `airs-influxdb` container; no token is stored in this repository.
 
+`verify-rollup-1h.sh` is intentionally not part of the automated deployment. It is a read-only Raspberry Pi operational verification tool: an operator runs it after a task change to compare one closed raw hour with its derived rollup point. It does not create tasks, write sensor data, or run as a background process.
+
 ## Verify one closed hour
 
 Use a fully closed UTC hour. The following compares raw CO2 mean/min/max/count to the corresponding rollup point.
