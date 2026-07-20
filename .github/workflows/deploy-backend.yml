@@ -77,6 +77,10 @@ jobs:
           # Git에서 관리하는 운영 compose를 실제 배포 compose에 반영한다.
           cp deploy/raspberry/docker-compose.yml /home/sogangairs/service/compose/docker-compose.yml
 
+          # InfluxDB Task is deployed from the same backend revision as the API.
+          # The script creates or updates only the derived rollup bucket and task.
+          bash deploy/raspberry/influx/upsert-rollup-task.sh
+
           cd /home/sogangairs/service/compose
           docker compose up -d --build redis spring
 
