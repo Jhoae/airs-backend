@@ -54,6 +54,8 @@ class InfluxDht22ReaderTest {
         influxProperties.setBucket("airs");
         influxProperties.setMeasurement("sensor_data");
         influxProperties.setNodeIdTag("node_id");
+        influxProperties.setRollupBucket("airs_rollup");
+        influxProperties.setRollupMeasurement("sensor_rollup_1h");
 
         influxDht22Reader = new InfluxDht22Reader(influxProperties);
         ReflectionTestUtils.setField(influxDht22Reader, "queryApi", queryApi);
@@ -136,6 +138,79 @@ class InfluxDht22ReaderTest {
         assertEquals(true, query.contains("aggregateWindow(every: 1h, fn: mean, createEmpty: false)"));
         assertEquals(true, query.contains("group(columns: [\"_time\"])"));
         assertEquals(true, query.contains("mean(column: \"_value\")"));
+    }
+
+    @Test
+    void readAverageCo2TrendWithHourlyRollup_should_merge_rollup_with_latest_raw_data() {
+        Instant from = Instant.parse("2026-07-10T00:00:00Z");
+        Instant to = Instant.parse("2026-07-10T04:00:00Z");
+
+        FluxTable rollupTable = mock(FluxTable.class);
+        FluxRecord rollupRecord = mock(FluxRecord.class);
+        when(rollupRecord.getValue()).thenReturn(901.4);
+        when(rollupRecord.getTime()).thenReturn(Instant.parse("2026-07-10T02:00:00Z"));
+        when(rollupTable.getRecords()).thenReturn(List.of(rollupRecord));
+
+        FluxTable rawTailTable = mock(FluxTable.class);
+        FluxRecord rawTailRecord = mock(FluxRecord.class);
+        when(rawTailRecord.getValue()).thenReturn(920.6);
+        when(rawTailRecord.getTime()).thenReturn(Instant.parse("2026-07-10T03:00:00Z"));
+        when(rawTailTable.getRecords()).thenReturn(List.of(rawTailRecord));
+
+        when(queryApi.query(anyString(), eq("airs-org")))
+                .thenReturn(List.of(rollupTable))
+                .thenReturn(List.of())
+                .thenReturn(List.of(rawTailTable));
+
+        List<Co2TrendItem> trend = influxDht22Reader.readAverageCo2TrendWithHourlyRollup(
+                List.of("node_01", "node_02"),
+                from,
+                to
+        );
+
+        assertEquals(2, trend.size());
+        assertEquals(Instant.parse("2026-07-10T02:00:00Z"), trend.get(0).getTimestamp());
+        assertEquals(901, trend.get(0).getCo2Ppm());
+        assertEquals(Instant.parse("2026-07-10T03:00:00Z"), trend.get(1).getTimestamp());
+        assertEquals(921, trend.get(1).getCo2Ppm());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi, times(3)).query(queryCaptor.capture(), eq("airs-org"));
+        List<String> queries = queryCaptor.getAllValues();
+        assertEquals(true, queries.get(0).contains("from(bucket: \"airs_rollup\")"));
+        assertEquals(true, queries.get(0).contains("r._measurement == \"sensor_rollup_1h\""));
+        assertEquals(true, queries.get(0).contains("r._field == \"co2_mean\""));
+        assertEquals(true, queries.get(2).contains("from(bucket: \"airs\")"));
+        assertEquals(true, queries.get(2).contains("aggregateWindow(every: 1h, fn: mean, createEmpty: false)"));
+    }
+
+    @Test
+    void readAverageCo2TrendWithHourlyRollup_should_fall_back_to_raw_when_rollup_query_fails() {
+        Instant from = Instant.parse("2026-07-10T00:00:00Z");
+        Instant to = Instant.parse("2026-07-10T01:00:00Z");
+        FluxTable rawTable = mock(FluxTable.class);
+        FluxRecord rawRecord = mock(FluxRecord.class);
+        when(rawRecord.getValue()).thenReturn(842.0);
+        when(rawRecord.getTime()).thenReturn(Instant.parse("2026-07-10T01:00:00Z"));
+        when(rawTable.getRecords()).thenReturn(List.of(rawRecord));
+
+        when(queryApi.query(anyString(), eq("airs-org")))
+                .thenThrow(new IllegalStateException("bucket not found"))
+                .thenReturn(List.of(rawTable));
+
+        List<Co2TrendItem> trend = influxDht22Reader.readAverageCo2TrendWithHourlyRollup(
+                List.of("node_01"),
+                from,
+                to
+        );
+
+        assertEquals(1, trend.size());
+        assertEquals(842, trend.get(0).getCo2Ppm());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi, times(2)).query(queryCaptor.capture(), eq("airs-org"));
+        assertEquals(true, queryCaptor.getAllValues().get(0).contains("from(bucket: \"airs_rollup\")"));
+        assertEquals(true, queryCaptor.getAllValues().get(1).contains("from(bucket: \"airs\")"));
     }
 
     @Test

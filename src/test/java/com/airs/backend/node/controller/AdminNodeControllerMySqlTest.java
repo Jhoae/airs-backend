@@ -353,7 +353,7 @@ class AdminNodeControllerMySqlTest {
     void getCo2Trend_should_return_today_and_yesterday_trend_lists() throws Exception {
         Long adminId = saveCo2AnalyticsFixture();
         String accessToken = jwtTokenProvider.generateAccessToken(adminId);
-        when(influxDht22Reader.readAverageCo2Trend(anyList(), any(Instant.class), any(Instant.class), eq("1h")))
+        when(influxDht22Reader.readAverageCo2TrendWithHourlyRollup(anyList(), any(Instant.class), any(Instant.class)))
                 .thenReturn(List.of(
                         new Co2TrendItem(Instant.parse("2026-07-05T15:00:00Z"), 700),
                         new Co2TrendItem(Instant.parse("2026-07-06T00:00:00Z"), 842),
@@ -376,11 +376,10 @@ class AdminNodeControllerMySqlTest {
                 .andExpect(jsonPath("$.yesterdayTrend[0].timestamp").value("2026-07-05T15:00:00Z"))
                 .andExpect(jsonPath("$.yesterdayTrend[0].co2Ppm").value(700));
 
-        verify(influxDht22Reader).readAverageCo2Trend(
+        verify(influxDht22Reader).readAverageCo2TrendWithHourlyRollup(
                 anyList(),
                 eq(Instant.parse("2026-07-04T15:00:00Z")),
-                eq(Instant.parse("2026-07-06T15:00:00Z")),
-                eq("1h")
+                eq(Instant.parse("2026-07-06T15:00:00Z"))
         );
     }
 

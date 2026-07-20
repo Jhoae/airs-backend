@@ -40,7 +40,6 @@ import java.util.stream.Collectors;
 public class AdminCo2AnalyticsService {
 
     private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
-    private static final String DAILY_TREND_WINDOW = "1h";
     private static final int TOP_SPACE_LIMIT = 5;
 
     private final AdminAccessService adminAccessService;
@@ -247,7 +246,7 @@ public class AdminCo2AnalyticsService {
         List<Co2TrendItem> trendItems = adminCo2TrendCache.getOrLoad(
                 campusId,
                 targetDate,
-                () -> influxDht22Reader.readAverageCo2Trend(nodeIds, from, to, DAILY_TREND_WINDOW)
+                () -> influxDht22Reader.readAverageCo2TrendWithHourlyRollup(nodeIds, from, to)
         );
 
         return new DailyCo2TrendSections(

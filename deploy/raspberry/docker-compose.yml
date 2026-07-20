@@ -169,6 +169,8 @@ services:
       INFLUX_BUCKET: ${INFLUXDB_BUCKET}
       INFLUX_MEASUREMENT: sensor_data
       INFLUX_NODE_ID_TAG: node_id
+      INFLUX_ROLLUP_BUCKET: ${INFLUX_ROLLUP_BUCKET:-airs_rollup}
+      INFLUX_ROLLUP_MEASUREMENT: ${INFLUX_ROLLUP_MEASUREMENT:-sensor_rollup_1h}
 
       MQTT_ENABLED: "true"
       MQTT_HOST: mosquitto

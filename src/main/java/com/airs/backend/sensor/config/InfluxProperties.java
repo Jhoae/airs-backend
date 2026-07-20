@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 @Getter
 @Setter
 @Component
-@ConfigurationProperties(prefix = "influx") // application.yaml의 influx 아래 설정을 이 클래스 필드에 묶어라
+@ConfigurationProperties(prefix = "influx") // application.yaml의 influx 설정을 필드에 연결한다.
 public class InfluxProperties {
     private String url;
     private String token;
@@ -16,4 +16,6 @@ public class InfluxProperties {
     private String bucket;
     private String measurement;
     private String nodeIdTag;
+    private String rollupBucket;
+    private String rollupMeasurement;
 }

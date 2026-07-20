@@ -7,6 +7,8 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 import com.airs.backend.sensor.config.InfluxProperties;
 import com.airs.backend.sensor.dto.AiSensorTrendData;
@@ -24,9 +26,11 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class InfluxDht22Reader {
 
     private final InfluxProperties influxProperties;
@@ -227,10 +231,7 @@ public class InfluxDht22Reader {
             throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
         }
 
-        String nodeIdSet = nodeIds.stream()
-                .distinct()
-                .map(nodeId -> "\"" + escapeFluxString(nodeId) + "\"")
-                .collect(java.util.stream.Collectors.joining(", "));
+        String nodeIdSet = toNodeIdSet(nodeIds);
 
         String query = """
                 from(bucket: "%s")
@@ -259,6 +260,105 @@ public class InfluxDht22Reader {
                 .flatMap(table -> table.getRecords().stream())
                 .map(record -> toCo2TrendItem(record))
                 .toList();
+    }
+
+    public List<Co2TrendItem> readAverageCo2TrendWithHourlyRollup(
+            List<String> nodeIds,
+            Instant from,
+            Instant to
+    ) {
+        validateAverageTrendRequest(nodeIds, from, to);
+
+        List<Co2TrendItem> rollupTrend;
+        try {
+            rollupTrend = readAverageHourlyRollup(nodeIds, from, to);
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "CO2 1시간 rollup 조회에 실패해 raw 데이터를 사용합니다. bucket={}, reason={}",
+                    influxProperties.getRollupBucket(),
+                    exception.getMessage()
+            );
+            return readAverageCo2Trend(nodeIds, from, to, "1h");
+        }
+        if (rollupTrend.isEmpty()) {
+            return readAverageCo2Trend(nodeIds, from, to, "1h");
+        }
+
+        Instant firstRollupTime = rollupTrend.get(0).getTimestamp();
+        Instant lastRollupTime = rollupTrend.get(rollupTrend.size() - 1).getTimestamp();
+        List<Co2TrendItem> rawBeforeRollup = from.isBefore(firstRollupTime)
+                ? readAverageCo2Trend(nodeIds, from, firstRollupTime, "1h")
+                : List.of();
+        List<Co2TrendItem> rawAfterRollup = lastRollupTime.isBefore(to)
+                ? readAverageCo2Trend(nodeIds, lastRollupTime, to, "1h")
+                : List.of();
+
+        // 집계가 없는 앞뒤 구간만 원본으로 보완해 최신 값을 유지한다.
+        Map<Instant, Co2TrendItem> mergedTrendByTime = new TreeMap<>();
+        rawBeforeRollup.forEach(item -> mergedTrendByTime.put(item.getTimestamp(), item));
+        rawAfterRollup.forEach(item -> mergedTrendByTime.put(item.getTimestamp(), item));
+        rollupTrend.forEach(item -> mergedTrendByTime.put(item.getTimestamp(), item));
+
+        return List.copyOf(mergedTrendByTime.values());
+    }
+
+    private List<Co2TrendItem> readAverageHourlyRollup(List<String> nodeIds, Instant from, Instant to) {
+        if (queryApi == null) {
+            throw new IllegalStateException("InfluxDB queryApi가 초기화되지 않았습니다.");
+        }
+
+        String query = """
+                from(bucket: "%s")
+                  |> range(start: time(v: "%s"), stop: time(v: "%s"))
+                  |> filter(fn: (r) => r._measurement == "%s")
+                  |> filter(fn: (r) => contains(value: r.%s, set: [%s]))
+                  |> filter(fn: (r) => r._field == "co2_mean")
+                  |> group(columns: ["_time"])
+                  |> mean(column: "_value")
+                  |> group()
+                  |> sort(columns: ["_time"])
+                """.formatted(
+                influxProperties.getRollupBucket(),
+                from,
+                to,
+                influxProperties.getRollupMeasurement(),
+                influxProperties.getNodeIdTag(),
+                toNodeIdSet(nodeIds)
+        );
+
+        return queryApi.query(query, influxProperties.getOrg()).stream()
+                .flatMap(table -> table.getRecords().stream())
+                .map(this::toCo2TrendItem)
+                .toList();
+    }
+
+    private void validateAverageTrendRequest(List<String> nodeIds, Instant from, Instant to) {
+        if (nodeIds == null || nodeIds.isEmpty()) {
+            throw new IllegalArgumentException("nodeIds가 비어 있습니다.");
+        }
+
+        if (nodeIds.stream().anyMatch(nodeId -> nodeId == null || nodeId.isBlank())) {
+            throw new IllegalArgumentException("nodeIds에 비어 있는 nodeId가 포함되어 있습니다.");
+        }
+
+        if (from == null) {
+            throw new IllegalArgumentException("from이 비어 있습니다.");
+        }
+
+        if (to == null) {
+            throw new IllegalArgumentException("to가 비어 있습니다.");
+        }
+
+        if (from.isAfter(to)) {
+            throw new IllegalArgumentException("from은 to보다 이후일 수 없습니다.");
+        }
+    }
+
+    private String toNodeIdSet(List<String> nodeIds) {
+        return nodeIds.stream()
+                .distinct()
+                .map(nodeId -> "\"" + escapeFluxString(nodeId) + "\"")
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 
     public AiSensorTrendData readAiSensorTrend(String nodeId, Instant to) {
