@@ -46,6 +46,10 @@ public class InfluxDht22Writer {
     }
 
     public void write(String nodeId, Dht22Payload payload) {
+        write(nodeId, payload, occupancyFusionService.resolve(nodeId, payload));
+    }
+
+    public void write(String nodeId, Dht22Payload payload, OccupancyFusionResult occupancy) {
         if (writeApi == null) {
             throw new IllegalStateException("InfluxDB writeApi가 초기화되지 않았습니다.");
         }
@@ -85,15 +89,14 @@ public class InfluxDht22Writer {
         }
 
         if (occupancyProperties.isInfluxWriteEnabled()) {
-            addOccupancyFields(point, nodeId, payload);
+            addOccupancyFields(point, payload, occupancy);
         }
 
         writeApi.writePoint(point);
         log.debug("InfluxDB에 센서 데이터를 저장했습니다. nodeId={}", nodeId);
     }
 
-    private void addOccupancyFields(Point point, String nodeId, Dht22Payload payload) {
-        OccupancyFusionResult occupancy = occupancyFusionService.resolve(nodeId, payload);
+    private void addOccupancyFields(Point point, Dht22Payload payload, OccupancyFusionResult occupancy) {
 
         if (payload.getPirDetected() != null) {
             point.addField("pir_detected", payload.getPirDetected());

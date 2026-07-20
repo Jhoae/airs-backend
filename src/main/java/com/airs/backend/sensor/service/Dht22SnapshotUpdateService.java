@@ -31,6 +31,7 @@ import java.time.ZoneId;
 public class Dht22SnapshotUpdateService {
 
     private static final Logger log = LoggerFactory.getLogger(Dht22SnapshotUpdateService.class);
+    private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final NodeInstallationRepository nodeInstallationRepository;
     private final NodeStatusSnapshotRepository nodeStatusSnapshotRepository;
@@ -41,16 +42,39 @@ public class Dht22SnapshotUpdateService {
 
     @Transactional
     public void updateLatestSnapshot(String nodeId, Dht22Payload payload) {
-        NodeInstallation installation = nodeInstallationRepository.findByNode_IdAndActiveTrue(nodeId)
-                .orElse(null);
-
+        NodeInstallation installation = findActiveInstallation(nodeId);
         if (installation == null) {
-            log.debug("active 설치가 없는 노드라 MySQL snapshot 갱신을 건너뜁니다. nodeId={}", nodeId);
             return;
         }
 
-        LocalDateTime receivedAt = LocalDateTime.ofInstant(payload.getTimestamp(), ZoneId.systemDefault());
-        OccupancyFusionResult occupancy = occupancyFusionService.resolve(nodeId, payload);
+        updateSnapshot(installation, payload, occupancyFusionService.resolve(nodeId, payload));
+    }
+
+    @Transactional
+    public void updateLatestSnapshot(String nodeId, Dht22Payload payload, OccupancyFusionResult occupancy) {
+        NodeInstallation installation = findActiveInstallation(nodeId);
+        if (installation == null) {
+            return;
+        }
+
+        updateSnapshot(installation, payload, occupancy);
+    }
+
+    private NodeInstallation findActiveInstallation(String nodeId) {
+        NodeInstallation installation = nodeInstallationRepository.findByNode_IdAndActiveTrue(nodeId)
+                .orElse(null);
+        if (installation == null) {
+            log.debug("active 설치가 없는 노드라 MySQL snapshot 갱신을 건너뜁니다. nodeId={}", nodeId);
+        }
+        return installation;
+    }
+
+    private void updateSnapshot(
+            NodeInstallation installation,
+            Dht22Payload payload,
+            OccupancyFusionResult occupancy
+    ) {
+        LocalDateTime receivedAt = LocalDateTime.ofInstant(payload.getTimestamp(), SERVICE_ZONE);
         updateNodeStatus(installation.getNode(), payload, occupancy, receivedAt);
         updateSpaceStatus(installation, payload, occupancy, receivedAt);
     }

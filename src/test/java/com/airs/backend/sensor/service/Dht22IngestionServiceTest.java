@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
@@ -32,6 +33,9 @@ class Dht22IngestionServiceTest {
     @Mock
     private Dht22SnapshotUpdateService dht22SnapshotUpdateService;
 
+    @Mock
+    private OccupancyFusionService occupancyFusionService;
+
     @InjectMocks
     private Dht22IngestionService dht22IngestionService;
 
@@ -42,13 +46,13 @@ class Dht22IngestionServiceTest {
         dht22IngestionService.ingest("node_01", payload);
 
         ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(influxDht22Writer).write(eq("node_01"), payloadCaptor.capture());
+        verify(influxDht22Writer).write(eq("node_01"), payloadCaptor.capture(), any());
 
         Dht22Payload savedPayload = payloadCaptor.getValue();
         assertEquals(26.5, savedPayload.getTemperature());
         assertEquals(50.3, savedPayload.getHumidity());
         assertNotNull(savedPayload.getTimestamp());
-        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(savedPayload));
+        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(savedPayload), any());
     }
 
     @Test
@@ -59,38 +63,38 @@ class Dht22IngestionServiceTest {
         dht22IngestionService.ingest("node_01", payload);
 
         ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(influxDht22Writer).write(eq("node_01"), payloadCaptor.capture());
+        verify(influxDht22Writer).write(eq("node_01"), payloadCaptor.capture(), any());
 
         assertEquals(timestamp, payloadCaptor.getValue().getTimestamp());
-        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payloadCaptor.getValue()));
+        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payloadCaptor.getValue()), any());
 
         InOrder inOrder = inOrder(dht22SnapshotUpdateService, influxDht22Writer);
-        inOrder.verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload));
-        inOrder.verify(influxDht22Writer).write(eq("node_01"), eq(payload));
+        inOrder.verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload), any());
+        inOrder.verify(influxDht22Writer).write(eq("node_01"), eq(payload), any());
     }
 
     @Test
     void ingest_should_try_influx_write_when_mysql_snapshot_update_fails() {
         Dht22Payload payload = new Dht22Payload(25.0, 45.0, Instant.parse("2026-04-10T10:00:00Z"));
         doThrow(new RuntimeException("mysql snapshot failure"))
-                .when(dht22SnapshotUpdateService).updateLatestSnapshot("node_01", payload);
+                .when(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload), any());
 
         assertDoesNotThrow(() -> dht22IngestionService.ingest("node_01", payload));
 
-        verify(dht22SnapshotUpdateService).updateLatestSnapshot("node_01", payload);
-        verify(influxDht22Writer).write("node_01", payload);
+        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload), any());
+        verify(influxDht22Writer).write(eq("node_01"), eq(payload), any());
     }
 
     @Test
     void ingest_should_keep_mysql_snapshot_update_when_influx_write_fails() {
         Dht22Payload payload = new Dht22Payload(25.0, 45.0, Instant.parse("2026-04-10T10:00:00Z"));
         doThrow(new RuntimeException("influx write failure"))
-                .when(influxDht22Writer).write("node_01", payload);
+                .when(influxDht22Writer).write(eq("node_01"), eq(payload), any());
 
         assertDoesNotThrow(() -> dht22IngestionService.ingest("node_01", payload));
 
-        verify(dht22SnapshotUpdateService).updateLatestSnapshot("node_01", payload);
-        verify(influxDht22Writer).write("node_01", payload);
+        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload), any());
+        verify(influxDht22Writer).write(eq("node_01"), eq(payload), any());
     }
 
     @Test

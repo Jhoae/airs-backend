@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Rebuild derived hourly CO2 points from retained raw data. This script is
-# intentionally manual: normal hourly aggregation belongs to the InfluxDB Task.
-# Usage: ./backfill-rollup-1h.sh 2026-07-05T02:00:00Z 2026-07-20T12:00:00Z
+# 보존 중인 원본 데이터로 파생 1시간 CO2 point를 다시 만든다.
+# 정기 집계는 InfluxDB Task가 담당하므로 이 스크립트는 수동 실행만 한다.
+# 사용법: ./backfill-rollup-1h.sh 2026-07-05T02:00:00Z 2026-07-20T12:00:00Z
 INFLUX_CONTAINER="${INFLUX_CONTAINER:-airs-influxdb}"
 INFLUX_ORG="${INFLUX_ORG:-airs}"
 RAW_BUCKET="${INFLUX_RAW_BUCKET:-airs}"
@@ -68,8 +68,8 @@ co2Count =
     |> aggregateWindow(every: 1h, fn: count, createEmpty: false)
     |> set(key: "_field", value: "co2_count")
 
-// InfluxDB merges fields with the same measurement, node_id, and timestamp.
-// Keep count separate because it is an integer while the other values are floats.
+// measurement, node_id, 시각이 같으면 InfluxDB가 field를 한 point로 합친다.
+// count는 정수이고 나머지는 실수이므로 별도 stream으로 저장한다.
 co2Mean
   |> set(key: "_measurement", value: "sensor_rollup_1h")
   |> to(bucket: "${ROLLUP_BUCKET}", tagColumns: ["node_id"])

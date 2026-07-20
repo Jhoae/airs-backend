@@ -25,6 +25,8 @@ import java.time.ZoneId;
 @RequiredArgsConstructor
 public class SpaceEvaluationSnapshotWriter {
 
+    private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
+
     // space_id를 기준으로 기존 최신 상태 행을 찾아 update 또는 insert한다.
     private final SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
 
@@ -34,8 +36,8 @@ public class SpaceEvaluationSnapshotWriter {
             Dht22Payload payload,
             SpaceEvaluationResult result
     ) {
-        // Influx Instant를 MySQL DATETIME에 저장할 서버 로컬 시각으로 변환한다.
-        LocalDateTime receivedAt = LocalDateTime.ofInstant(payload.getTimestamp(), ZoneId.systemDefault());
+        // Influx Instant를 MySQL DATETIME에 저장할 한국 서비스 기준 시각으로 변환한다.
+        LocalDateTime receivedAt = LocalDateTime.ofInstant(payload.getTimestamp(), SERVICE_ZONE);
 
         // 같은 space에는 snapshot 한 행만 존재해야 하므로 space_id로 먼저 찾는다.
         spaceStatusSnapshotRepository.findBySpace_Id(installation.getSpace().getId())
