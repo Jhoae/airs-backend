@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 보존 중인 원본 데이터로 파생 1일 온도·습도·CO2 point를 다시 만든다.
+# 보존 중인 원본 데이터로 파생 1일 온도·습도·CO2·재실·Comfort Score point를 다시 만든다.
 # 정기 집계는 InfluxDB Task가 담당하므로 이 스크립트는 수동 실행만 한다.
 INFLUX_CONTAINER="${INFLUX_CONTAINER:-airs-influxdb}"
 INFLUX_ORG="${INFLUX_ORG:-airs}"
@@ -80,5 +80,7 @@ FLUX
 backfill_metric "temperature_c" "temperature"
 backfill_metric "humidity_pct" "humidity"
 backfill_metric "co2_ppm" "co2"
+backfill_metric "occupancy_present" "occupancy"
+backfill_metric "comfort_score" "comfort_score"
 
-echo "Backfilled daily temperature, humidity, and CO2 rollups for [${START}, ${END})."
+echo "Backfilled daily temperature, humidity, CO2, occupancy, and Comfort Score rollups for [${START}, ${END})."

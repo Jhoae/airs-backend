@@ -1,6 +1,7 @@
 package com.airs.backend.node.service;
 
 import com.airs.backend.admin.service.AdminAccessService;
+import com.airs.backend.node.cache.AdminNodeSensorTrendCache;
 import com.airs.backend.node.dto.trend.AdminNodeCo2TrendPeriod;
 import com.airs.backend.node.dto.trend.AdminNodeSensorTrendPointResponse;
 import com.airs.backend.node.dto.trend.AdminNodeSensorTrendResponse;
@@ -32,6 +33,8 @@ public class AdminNodeSensorTrendService {
     private final NodeInstallationRepository nodeInstallationRepository;
     // raw·rollup InfluxDB 시계열을 읽습니다.
     private final InfluxDht22Reader influxDht22Reader;
+    // 같은 노드·지표·기간의 시계열 응답을 Redis에서 재사용합니다.
+    private final AdminNodeSensorTrendCache adminNodeSensorTrendCache;
 
     // 선택한 metric과 period에 맞는 노드 시계열 응답을 반환합니다.
     public AdminNodeSensorTrendResponse getSensorTrend(
@@ -53,6 +56,22 @@ public class AdminNodeSensorTrendService {
         SensorTrendMetric metric = SensorTrendMetric.fromApiValue(metricValue);
         // 노드 상세 UI는 다섯 기간 버튼만 사용하므로 period를 반드시 요구합니다.
         AdminNodeCo2TrendPeriod period = requirePeriod(periodValue);
+
+        // 권한 검증을 통과한 요청만 Redis 응답을 재사용합니다.
+        return adminNodeSensorTrendCache.getOrLoad(
+                nodeId,
+                metric,
+                period,
+                () -> loadSensorTrend(nodeId, metric, period)
+        );
+    }
+
+    // 캐시 미스일 때 선택한 지표·기간의 InfluxDB 응답을 새로 생성합니다.
+    private AdminNodeSensorTrendResponse loadSensorTrend(
+            String nodeId,
+            SensorTrendMetric metric,
+            AdminNodeCo2TrendPeriod period
+    ) {
         // 응답 시각은 초 단위로 잘라 같은 요청 안에서 범위를 일관되게 유지합니다.
         Instant to = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         // 선택한 기간만큼 이전을 InfluxDB 조회 시작 시각으로 계산합니다.

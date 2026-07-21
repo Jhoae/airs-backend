@@ -10,7 +10,11 @@ public enum SensorTrendMetric {
     // 습도 원본 field와 rollup 평균·건수 field를 정의합니다.
     HUMIDITY("humidity", "humidity_pct", "humidity_mean", "humidity_count"),
     // CO2 원본 field와 rollup 평균·건수 field를 정의합니다.
-    CO2("co2", "co2_ppm", "co2_mean", "co2_count");
+    CO2("co2", "co2_ppm", "co2_mean", "co2_count"),
+    // 재실 원본 field와 구간 재실 비율 rollup field를 정의합니다.
+    OCCUPANCY("occupancy", "occupancy_present", "occupancy_mean", "occupancy_count"),
+    // 10분 평가 결과인 Comfort Score와 rollup field를 정의합니다.
+    COMFORT("comfort", "comfort_score", "comfort_score_mean", "comfort_score_count");
 
     // API가 받는 지표 문자열입니다.
     private final String apiValue;
@@ -37,15 +41,15 @@ public enum SensorTrendMetric {
     public static SensorTrendMetric fromApiValue(String value) {
         // metric을 생략하면 어떤 sensor field를 읽을지 결정할 수 없습니다.
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("metric은 temperature, humidity, co2 중 하나여야 합니다.");
+            throw new IllegalArgumentException("metric은 temperature, humidity, co2, occupancy, comfort 중 하나여야 합니다.");
         }
 
-        // 허용한 세 지표 중 일치하는 값을 찾아 반환합니다.
+        // 허용한 다섯 지표 중 일치하는 값을 찾아 반환합니다.
         return Arrays.stream(values())
                 .filter(metric -> metric.apiValue.equalsIgnoreCase(value))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "metric은 temperature, humidity, co2 중 하나여야 합니다."
+                        "metric은 temperature, humidity, co2, occupancy, comfort 중 하나여야 합니다."
                 ));
     }
 

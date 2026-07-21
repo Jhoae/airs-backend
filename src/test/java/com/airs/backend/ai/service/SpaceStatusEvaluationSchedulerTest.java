@@ -27,6 +27,7 @@ import com.airs.backend.sensor.dto.AiSensorTrendData;
 import com.airs.backend.sensor.dto.Dht22MeasurementItem;
 import com.airs.backend.sensor.dto.Dht22Payload;
 import com.airs.backend.sensor.influx.InfluxDht22Reader;
+import com.airs.backend.sensor.influx.InfluxDht22Writer;
 import com.airs.backend.sensor.service.OccupancyFusionResult;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserRole;
@@ -45,6 +46,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -66,6 +68,9 @@ class SpaceStatusEvaluationSchedulerTest {
 
     @Mock
     private SpaceEvaluationSnapshotWriter spaceEvaluationSnapshotWriter;
+
+    @Mock
+    private InfluxDht22Writer influxDht22Writer;
 
     @Mock
     private SpaceEvaluationAlertService spaceEvaluationAlertService;
@@ -105,6 +110,39 @@ class SpaceStatusEvaluationSchedulerTest {
                         && payload.getHumidity().equals(52.0)),
                 eq(result)
         );
+        verify(influxDht22Writer).writeComfortScore(eq("node_01"), eq(74), any(Instant.class));
+        verify(spaceEvaluationAlertService).syncAlerts(installation, result);
+    }
+
+    @Test
+    void evaluateActiveInstallations_should_continue_when_comfort_history_write_fails() {
+        NodeInstallation installation = installation();
+        AiSensorTrendData trendData = new AiSensorTrendData(
+                new Dht22MeasurementItem(24.3, 52.0, 1128, Instant.parse("2026-07-09T01:30:00Z")),
+                55.0,
+                12,
+                -0.4,
+                3
+        );
+        SpaceEvaluationPayload evaluationPayload = evaluationPayload();
+        SpaceEvaluationResult result = result();
+
+        when(nodeInstallationRepository.findAllByActiveTrue()).thenReturn(List.of(installation));
+        when(influxDht22Reader.readAiSensorTrend(eq("node_01"), any(Instant.class))).thenReturn(trendData);
+        when(spaceEvaluationPayloadAssembler.fromTelemetry(
+                eq(installation),
+                any(Dht22Payload.class),
+                any(OccupancyFusionResult.class),
+                eq(trendData)
+        )).thenReturn(evaluationPayload);
+        when(spaceStatusEvaluationService.evaluateSpaceStatus(evaluationPayload)).thenReturn(result);
+        doThrow(new IllegalStateException("InfluxDB unavailable"))
+                .when(influxDht22Writer)
+                .writeComfortScore(eq("node_01"), eq(74), any(Instant.class));
+
+        scheduler.evaluateActiveInstallations();
+
+        verify(spaceEvaluationSnapshotWriter).write(eq(installation), any(Dht22Payload.class), eq(result));
         verify(spaceEvaluationAlertService).syncAlerts(installation, result);
     }
 

@@ -142,6 +142,66 @@ class InfluxDht22ReaderTest {
     }
 
     @Test
+    void readSensorTrend_should_query_selected_occupancy_field_with_window_average() {
+        Instant from = Instant.parse("2026-07-21T00:00:00Z");
+        Instant to = Instant.parse("2026-07-21T06:00:00Z");
+        Instant timestamp = Instant.parse("2026-07-21T00:10:00Z");
+
+        when(fluxTable.getRecords()).thenReturn(List.of(fluxRecord));
+        when(fluxRecord.getValue()).thenReturn(0.4);
+        when(fluxRecord.getTime()).thenReturn(timestamp);
+        when(queryApi.query(org.mockito.ArgumentMatchers.anyString(), eq("airs-org")))
+                .thenReturn(List.of(fluxTable));
+
+        List<SensorTrendItem> trend = influxDht22Reader.readSensorTrend(
+                SensorTrendMetric.OCCUPANCY,
+                "node_01",
+                from,
+                to,
+                "10m"
+        );
+
+        assertEquals(1, trend.size());
+        assertEquals(0.4, trend.get(0).getValue());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi).query(queryCaptor.capture(), eq("airs-org"));
+        String query = queryCaptor.getValue();
+        assertEquals(true, query.contains("r._field == \"occupancy_present\""));
+        assertEquals(true, query.contains("aggregateWindow(every: 10m, fn: mean, createEmpty: false)"));
+    }
+
+    @Test
+    void readSensorTrend_should_query_selected_comfort_field_with_window_average() {
+        Instant from = Instant.parse("2026-07-21T00:00:00Z");
+        Instant to = Instant.parse("2026-07-21T06:00:00Z");
+        Instant timestamp = Instant.parse("2026-07-21T00:10:00Z");
+
+        when(fluxTable.getRecords()).thenReturn(List.of(fluxRecord));
+        when(fluxRecord.getValue()).thenReturn(74.0);
+        when(fluxRecord.getTime()).thenReturn(timestamp);
+        when(queryApi.query(org.mockito.ArgumentMatchers.anyString(), eq("airs-org")))
+                .thenReturn(List.of(fluxTable));
+
+        List<SensorTrendItem> trend = influxDht22Reader.readSensorTrend(
+                SensorTrendMetric.COMFORT,
+                "node_01",
+                from,
+                to,
+                "10m"
+        );
+
+        assertEquals(1, trend.size());
+        assertEquals(74.0, trend.get(0).getValue());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi).query(queryCaptor.capture(), eq("airs-org"));
+        String query = queryCaptor.getValue();
+        assertEquals(true, query.contains("r._field == \"comfort_score\""));
+        assertEquals(true, query.contains("aggregateWindow(every: 10m, fn: mean, createEmpty: false)"));
+    }
+
+    @Test
     void readSensorTrendWithDailyRollup_should_fall_back_to_raw_when_daily_rollup_has_gap() {
         Instant from = Instant.parse("2026-07-01T00:00:00Z");
         Instant to = Instant.parse("2026-07-05T00:00:00Z");

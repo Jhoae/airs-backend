@@ -34,6 +34,20 @@ rawHumidity =
     |> filter(fn: (r) => r._field == "humidity_pct")
     |> keep(columns: ["_time", "_value", "node_id"])
 
+rawOccupancy =
+  from(bucket: rawBucket)
+    |> range(start: completedDayStart, stop: currentDayStart)
+    |> filter(fn: (r) => r._measurement == "sensor_data")
+    |> filter(fn: (r) => r._field == "occupancy_present")
+    |> keep(columns: ["_time", "_value", "node_id"])
+
+rawComfort =
+  from(bucket: rawBucket)
+    |> range(start: completedDayStart, stop: currentDayStart)
+    |> filter(fn: (r) => r._measurement == "sensor_data")
+    |> filter(fn: (r) => r._field == "comfort_score")
+    |> keep(columns: ["_time", "_value", "node_id"])
+
 co2Mean =
   rawCo2
     |> aggregateWindow(every: 1d, fn: mean, createEmpty: false)
@@ -94,6 +108,46 @@ humidityCount =
     |> aggregateWindow(every: 1d, fn: count, createEmpty: false)
     |> set(key: "_field", value: "humidity_count")
 
+occupancyMean =
+  rawOccupancy
+    |> aggregateWindow(every: 1d, fn: mean, createEmpty: false)
+    |> set(key: "_field", value: "occupancy_mean")
+
+occupancyMin =
+  rawOccupancy
+    |> aggregateWindow(every: 1d, fn: min, createEmpty: false)
+    |> set(key: "_field", value: "occupancy_min")
+
+occupancyMax =
+  rawOccupancy
+    |> aggregateWindow(every: 1d, fn: max, createEmpty: false)
+    |> set(key: "_field", value: "occupancy_max")
+
+occupancyCount =
+  rawOccupancy
+    |> aggregateWindow(every: 1d, fn: count, createEmpty: false)
+    |> set(key: "_field", value: "occupancy_count")
+
+comfortMean =
+  rawComfort
+    |> aggregateWindow(every: 1d, fn: mean, createEmpty: false)
+    |> set(key: "_field", value: "comfort_score_mean")
+
+comfortMin =
+  rawComfort
+    |> aggregateWindow(every: 1d, fn: min, createEmpty: false)
+    |> set(key: "_field", value: "comfort_score_min")
+
+comfortMax =
+  rawComfort
+    |> aggregateWindow(every: 1d, fn: max, createEmpty: false)
+    |> set(key: "_field", value: "comfort_score_max")
+
+comfortCount =
+  rawComfort
+    |> aggregateWindow(every: 1d, fn: count, createEmpty: false)
+    |> set(key: "_field", value: "comfort_score_count")
+
 // count는 정수, 나머지는 실수이므로 네 stream을 각각 저장한다.
 co2Mean
   |> set(key: "_measurement", value: "sensor_rollup_1d")
@@ -141,5 +195,39 @@ humidityMax
   |> to(bucket: rollupBucket, tagColumns: ["node_id"])
 
 humidityCount
+  |> set(key: "_measurement", value: "sensor_rollup_1d")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+// 재실 평균은 하루 동안 재실로 판정된 telemetry 비율입니다.
+occupancyMean
+  |> set(key: "_measurement", value: "sensor_rollup_1d")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+occupancyMin
+  |> set(key: "_measurement", value: "sensor_rollup_1d")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+occupancyMax
+  |> set(key: "_measurement", value: "sensor_rollup_1d")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+occupancyCount
+  |> set(key: "_measurement", value: "sensor_rollup_1d")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+// Comfort Score는 하루 동안 계산된 점수들의 평균과 범위를 기록합니다.
+comfortMean
+  |> set(key: "_measurement", value: "sensor_rollup_1d")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+comfortMin
+  |> set(key: "_measurement", value: "sensor_rollup_1d")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+comfortMax
+  |> set(key: "_measurement", value: "sensor_rollup_1d")
+  |> to(bucket: rollupBucket, tagColumns: ["node_id"])
+
+comfortCount
   |> set(key: "_measurement", value: "sensor_rollup_1d")
   |> to(bucket: rollupBucket, tagColumns: ["node_id"])

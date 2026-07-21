@@ -8,6 +8,7 @@ import com.airs.backend.sensor.dto.AiSensorTrendData;
 import com.airs.backend.sensor.dto.Dht22MeasurementItem;
 import com.airs.backend.sensor.dto.Dht22Payload;
 import com.airs.backend.sensor.influx.InfluxDht22Reader;
+import com.airs.backend.sensor.influx.InfluxDht22Writer;
 import com.airs.backend.sensor.service.OccupancyFusionResult;
 import com.airs.backend.status.entity.OccupancyStatus;
 import com.airs.backend.status.entity.TelemetryOccupancyState;
@@ -50,6 +51,8 @@ public class SpaceStatusEvaluationScheduler {
     private final SpaceStatusEvaluationService spaceStatusEvaluationService;
     // 판정 결과를 공간당 최신 한 행인 space_status_snapshots에 upsert한다.
     private final SpaceEvaluationSnapshotWriter spaceEvaluationSnapshotWriter;
+    // 평가 시각별 Comfort Score를 InfluxDB 그래프 이력으로 기록한다.
+    private final InfluxDht22Writer influxDht22Writer;
     // 환기/냉난방 판정에 따라 ACTIVE 알림을 생성·갱신·해결한다.
     private final SpaceEvaluationAlertService spaceEvaluationAlertService;
 
@@ -99,11 +102,24 @@ public class SpaceStatusEvaluationScheduler {
             SpaceEvaluationResult result = spaceStatusEvaluationService.evaluateSpaceStatus(evaluationPayload);
             // MySQL space_status_snapshots의 해당 space 한 행에 최신 센서값과 comfort 결과를 저장한다.
             spaceEvaluationSnapshotWriter.write(installation, payload, result);
+            // 그래프용 Comfort Score 이력의 실패가 snapshot·alert 갱신을 막지 않게 별도로 기록한다.
+            writeComfortScoreSafely(nodeId, result, evaluatedAt);
             // MySQL alerts에서 같은 node/type ACTIVE 알림을 생성·갱신하거나 해결 처리한다.
             spaceEvaluationAlertService.syncAlerts(installation, result);
         } catch (RuntimeException exception) {
             // Influx/DB 한 건의 실패만 남기고 다음 설치 노드 평가를 이어간다.
             log.warn("AI 공간 상태 평가를 건너뜁니다. nodeId={}, reason={}", nodeId, exception.getMessage());
+        }
+    }
+
+    // Comfort Score 저장 실패를 운영 상태 판단 실패로 번지지 않게 격리합니다.
+    private void writeComfortScoreSafely(String nodeId, SpaceEvaluationResult result, Instant evaluatedAt) {
+        try {
+            // 규칙 함수가 계산한 0~100 점수를 실제 평가 시각에 기록합니다.
+            influxDht22Writer.writeComfortScore(nodeId, result.comfort().score(), evaluatedAt);
+        } catch (RuntimeException exception) {
+            // 다음 주기에 다시 적재할 수 있도록 실패만 남기고 평가 흐름은 유지합니다.
+            log.warn("Comfort Score 이력 저장에 실패했습니다. nodeId={}, reason={}", nodeId, exception.getMessage());
         }
     }
 

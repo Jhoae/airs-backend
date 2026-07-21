@@ -72,7 +72,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = "analytics.cache.enabled=false")
+@SpringBootTest(properties = {"analytics.cache.enabled=false", "node.sensor-trend.cache.enabled=false"})
 @AutoConfigureMockMvc
 @ActiveProfiles("local")
 class AdminNodeControllerMySqlTest {
@@ -286,6 +286,74 @@ class AdminNodeControllerMySqlTest {
 
         verify(influxDht22Reader).readSensorTrend(
                 eq(SensorTrendMetric.TEMPERATURE),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("10m")
+        );
+    }
+
+    @Test
+    void getSensorTrend_should_return_selected_occupancy_points() throws Exception {
+        Long adminId = saveNodeListFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+        when(influxDht22Reader.readSensorTrend(
+                eq(SensorTrendMetric.OCCUPANCY),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("10m")
+        )).thenReturn(List.of(
+                new SensorTrendItem(Instant.parse("2026-07-21T00:00:00Z"), 0.0),
+                new SensorTrendItem(Instant.parse("2026-07-21T00:10:00Z"), 1.0)
+        ));
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/sensor-trend")
+                        .param("metric", "occupancy")
+                        .param("period", "1d")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.metric").value("occupancy"))
+                .andExpect(jsonPath("$.period").value("1d"))
+                .andExpect(jsonPath("$.points[0].value").value(0.0))
+                .andExpect(jsonPath("$.points[1].value").value(1.0));
+
+        verify(influxDht22Reader).readSensorTrend(
+                eq(SensorTrendMetric.OCCUPANCY),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("10m")
+        );
+    }
+
+    @Test
+    void getSensorTrend_should_return_selected_comfort_points() throws Exception {
+        Long adminId = saveNodeListFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+        when(influxDht22Reader.readSensorTrend(
+                eq(SensorTrendMetric.COMFORT),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("10m")
+        )).thenReturn(List.of(
+                new SensorTrendItem(Instant.parse("2026-07-21T00:00:00Z"), 72.0),
+                new SensorTrendItem(Instant.parse("2026-07-21T00:10:00Z"), 75.0)
+        ));
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/sensor-trend")
+                        .param("metric", "comfort")
+                        .param("period", "1d")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.metric").value("comfort"))
+                .andExpect(jsonPath("$.period").value("1d"))
+                .andExpect(jsonPath("$.points[0].value").value(72.0))
+                .andExpect(jsonPath("$.points[1].value").value(75.0));
+
+        verify(influxDht22Reader).readSensorTrend(
+                eq(SensorTrendMetric.COMFORT),
                 eq("AIRS-2483"),
                 any(Instant.class),
                 any(Instant.class),

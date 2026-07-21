@@ -531,10 +531,12 @@ paths:
         - Admin Nodes
       summary: 관리자 노드 선택 센서 추이 조회
       description: >
-        노드 상세의 온도·습도·CO2 카드가 선택한 지표 하나만 반환합니다. metric과 period는 모두 필수입니다.
+        노드 상세의 온도·습도·CO2·재실·Comfort Score 카드가 선택한 지표 하나만 반환합니다. metric과 period는 모두 필수입니다.
         1d는 raw sensor_data를 10분 평균으로 읽고, 5d는 sensor_rollup_1h의 1시간 평균을 우선 사용합니다.
         1mo는 1시간 rollup을 count 가중 6시간 평균으로 묶으며, 6mo와 1y는 sensor_rollup_1d의 일 평균을 우선 사용합니다.
         필요한 rollup이 없거나 날짜·시간 중간에 공백이 있거나 조회에 실패하면 같은 기간의 raw telemetry로 전체 fallback합니다.
+        occupancy는 occupancy_present의 평균으로, 0은 비재실·1은 재실·0.4는 해당 구간 표본의 약 40%가 재실이라는 뜻입니다.
+        comfort는 10분 평가가 끝난 시각에 기록한 0~100점이며, 배포 후 평가 이력이 생기기 전에는 points가 비어 있을 수 있습니다.
       security:
         - bearerAuth: []
       parameters:
@@ -542,13 +544,15 @@ paths:
         - name: metric
           in: query
           required: true
-          description: 그래프로 조회할 단일 센서 지표입니다.
+          description: 그래프로 조회할 단일 센서 또는 평가 지표입니다.
           schema:
             type: string
             enum:
               - temperature
               - humidity
               - co2
+              - occupancy
+              - comfort
             example: temperature
         - name: period
           in: query
@@ -1563,6 +1567,8 @@ components:
             - temperature
             - humidity
             - co2
+            - occupancy
+            - comfort
           example: temperature
         period:
           type: string

@@ -19,6 +19,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 
+import java.time.Instant;
+
 // MQTT telemetry를 InfluxDB raw measurement로 기록하는 컴포넌트입니다.
 @Component
 // 설정과 재실 융합 서비스를 생성자로 주입합니다.
@@ -121,6 +123,40 @@ public class InfluxDht22Writer {
         writeApi.writePoint(point);
         // 운영 로그에서 저장한 node ID를 추적할 수 있게 남깁니다.
         log.debug("InfluxDB에 센서 데이터를 저장했습니다. nodeId={}", nodeId);
+    }
+
+    // 10분 규칙 평가가 계산한 Comfort Score를 해당 평가 시각의 raw field로 기록합니다.
+    public void writeComfortScore(String nodeId, int comfortScore, Instant evaluatedAt) {
+        // 초기화 전 쓰기를 막아 잘못된 런타임 상태를 드러냅니다.
+        if (writeApi == null) {
+            throw new IllegalStateException("InfluxDB writeApi가 초기화되지 않았습니다.");
+        }
+
+        // node ID가 없으면 점수를 어떤 노드의 이력으로 저장할지 알 수 없습니다.
+        if (nodeId == null || nodeId.isBlank()) {
+            throw new IllegalArgumentException("nodeId가 비어 있습니다.");
+        }
+
+        // Comfort Score는 정책상 0점부터 100점 사이여야 합니다.
+        if (comfortScore < 0 || comfortScore > 100) {
+            throw new IllegalArgumentException("comfortScore는 0에서 100 사이여야 합니다.");
+        }
+
+        // 평가 시각이 없으면 그래프에서 점수의 시간 위치를 정할 수 없습니다.
+        if (evaluatedAt == null) {
+            throw new IllegalArgumentException("evaluatedAt이 비어 있습니다.");
+        }
+
+        // 기존 raw telemetry와 같은 measurement·node tag로 점수 field만 가진 Point를 만듭니다.
+        Point point = Point.measurement(influxProperties.getMeasurement())
+                .addTag(influxProperties.getNodeIdTag(), nodeId)
+                .addField("comfort_score", comfortScore)
+                .time(evaluatedAt, WritePrecision.MS);
+
+        // MySQL 최신 snapshot과 별도로 그래프에 쓸 사실 기반 이력을 저장합니다.
+        writeApi.writePoint(point);
+        // 운영 중 점수 이력 적재 여부를 node ID와 함께 추적합니다.
+        log.debug("InfluxDB에 Comfort Score를 저장했습니다. nodeId={}, comfortScore={}", nodeId, comfortScore);
     }
 
     // 원본 센서값과 융합 결과에서 재실·Wi-Fi 관련 field를 Point에 추가합니다.
