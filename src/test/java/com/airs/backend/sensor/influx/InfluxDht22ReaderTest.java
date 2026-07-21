@@ -27,6 +27,8 @@ import com.airs.backend.sensor.dto.AiSensorTrendData;
 import com.airs.backend.sensor.dto.Co2TrendItem;
 import com.airs.backend.sensor.dto.DailyDht22SummaryResponse;
 import com.airs.backend.sensor.dto.Dht22MeasurementItem;
+import com.airs.backend.sensor.dto.SensorTrendItem;
+import com.airs.backend.sensor.dto.SensorTrendMetric;
 import com.influxdb.client.QueryApi;
 import com.influxdb.query.FluxRecord;
 import com.influxdb.query.FluxTable;
@@ -106,6 +108,79 @@ class InfluxDht22ReaderTest {
         String query = queryCaptor.getValue();
         assertEquals(true, query.contains("r._field == \"co2_ppm\""));
         assertEquals(true, query.contains("aggregateWindow(every: 5m, fn: mean, createEmpty: false)"));
+    }
+
+    @Test
+    void readSensorTrend_should_query_selected_humidity_field_with_window_average() {
+        Instant from = Instant.parse("2026-07-21T00:00:00Z");
+        Instant to = Instant.parse("2026-07-21T06:00:00Z");
+        Instant timestamp = Instant.parse("2026-07-21T00:10:00Z");
+
+        when(fluxTable.getRecords()).thenReturn(List.of(fluxRecord));
+        when(fluxRecord.getValue()).thenReturn(53.25);
+        when(fluxRecord.getTime()).thenReturn(timestamp);
+        when(queryApi.query(org.mockito.ArgumentMatchers.anyString(), eq("airs-org")))
+                .thenReturn(List.of(fluxTable));
+
+        List<SensorTrendItem> trend = influxDht22Reader.readSensorTrend(
+                SensorTrendMetric.HUMIDITY,
+                "node_01",
+                from,
+                to,
+                "10m"
+        );
+
+        assertEquals(1, trend.size());
+        assertEquals(timestamp, trend.get(0).getTimestamp());
+        assertEquals(53.25, trend.get(0).getValue());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi).query(queryCaptor.capture(), eq("airs-org"));
+        String query = queryCaptor.getValue();
+        assertEquals(true, query.contains("r._field == \"humidity_pct\""));
+        assertEquals(true, query.contains("aggregateWindow(every: 10m, fn: mean, createEmpty: false)"));
+    }
+
+    @Test
+    void readSensorTrendWithDailyRollup_should_fall_back_to_raw_when_daily_rollup_has_gap() {
+        Instant from = Instant.parse("2026-07-01T00:00:00Z");
+        Instant to = Instant.parse("2026-07-05T00:00:00Z");
+
+        FluxTable rollupTable = mock(FluxTable.class);
+        FluxRecord firstRollupRecord = mock(FluxRecord.class);
+        FluxRecord lastRollupRecord = mock(FluxRecord.class);
+        when(firstRollupRecord.getValue()).thenReturn(24.0);
+        when(firstRollupRecord.getTime()).thenReturn(Instant.parse("2026-07-02T00:00:00Z"));
+        when(lastRollupRecord.getValue()).thenReturn(25.0);
+        when(lastRollupRecord.getTime()).thenReturn(Instant.parse("2026-07-04T00:00:00Z"));
+        when(rollupTable.getRecords()).thenReturn(List.of(firstRollupRecord, lastRollupRecord));
+
+        FluxTable rawTable = mock(FluxTable.class);
+        FluxRecord rawRecord = mock(FluxRecord.class);
+        when(rawRecord.getValue()).thenReturn(24.5);
+        when(rawRecord.getTime()).thenReturn(Instant.parse("2026-07-03T00:00:00Z"));
+        when(rawTable.getRecords()).thenReturn(List.of(rawRecord));
+
+        when(queryApi.query(anyString(), eq("airs-org")))
+                .thenReturn(List.of(rollupTable))
+                .thenReturn(List.of(rawTable));
+
+        List<SensorTrendItem> trend = influxDht22Reader.readSensorTrendWithDailyRollup(
+                SensorTrendMetric.TEMPERATURE,
+                "node_01",
+                from,
+                to
+        );
+
+        assertEquals(1, trend.size());
+        assertEquals(24.5, trend.get(0).getValue());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi, times(2)).query(queryCaptor.capture(), eq("airs-org"));
+        assertEquals(true, queryCaptor.getAllValues().get(0).contains("from(bucket: \"airs_rollup\")"));
+        assertEquals(true, queryCaptor.getAllValues().get(0).contains("r._field == \"temperature_mean\""));
+        assertEquals(true, queryCaptor.getAllValues().get(1).contains("from(bucket: \"airs\")"));
+        assertEquals(true, queryCaptor.getAllValues().get(1).contains("r._field == \"temperature_c\""));
     }
 
     @Test
@@ -254,6 +329,107 @@ class InfluxDht22ReaderTest {
     }
 
     @Test
+    void readCo2TrendWithHourlyRollup_should_use_hourly_rollup_for_five_day_period() {
+        Instant from = Instant.parse("2026-07-10T00:00:00Z");
+        Instant to = Instant.parse("2026-07-10T04:00:00Z");
+        FluxTable rollupTable = mock(FluxTable.class);
+        List<FluxRecord> hourlyRollupRecords = List.of(
+                hourlyRollupRecord("2026-07-10T01:00:00Z", 800.0, 720L),
+                hourlyRollupRecord("2026-07-10T02:00:00Z", 820.0, 720L),
+                hourlyRollupRecord("2026-07-10T03:00:00Z", 840.0, 720L),
+                hourlyRollupRecord("2026-07-10T04:00:00Z", 860.0, 720L)
+        );
+        when(rollupTable.getRecords()).thenReturn(hourlyRollupRecords);
+        when(queryApi.query(anyString(), eq("airs-org"))).thenReturn(List.of(rollupTable));
+
+        List<Co2TrendItem> trend = influxDht22Reader.readCo2TrendWithHourlyRollup(
+                "node_01",
+                from,
+                to,
+                "1h"
+        );
+
+        assertEquals(4, trend.size());
+        assertEquals(800, trend.get(0).getCo2Ppm());
+        assertEquals(860, trend.get(3).getCo2Ppm());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi).query(queryCaptor.capture(), eq("airs-org"));
+        String query = queryCaptor.getValue();
+        assertEquals(true, query.contains("from(bucket: \"airs_rollup\")"));
+        assertEquals(true, query.contains("r._field == \"co2_mean\" or r._field == \"co2_count\""));
+        assertEquals(true, query.contains("pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")"));
+    }
+
+    @Test
+    void readCo2TrendWithHourlyRollup_should_use_count_weighted_average_for_one_month_period() {
+        Instant from = Instant.parse("2026-07-10T00:00:00Z");
+        Instant to = Instant.parse("2026-07-10T06:00:00Z");
+        FluxTable rollupTable = mock(FluxTable.class);
+        List<FluxRecord> hourlyRollupRecords = List.of(
+                hourlyRollupRecord("2026-07-10T01:00:00Z", 800.0, 720L),
+                hourlyRollupRecord("2026-07-10T02:00:00Z", 1_200.0, 20L),
+                hourlyRollupRecord("2026-07-10T03:00:00Z", 800.0, 720L),
+                hourlyRollupRecord("2026-07-10T04:00:00Z", 800.0, 720L),
+                hourlyRollupRecord("2026-07-10T05:00:00Z", 800.0, 720L),
+                hourlyRollupRecord("2026-07-10T06:00:00Z", 800.0, 720L)
+        );
+        when(rollupTable.getRecords()).thenReturn(hourlyRollupRecords);
+        when(queryApi.query(anyString(), eq("airs-org"))).thenReturn(List.of(rollupTable));
+
+        List<Co2TrendItem> trend = influxDht22Reader.readCo2TrendWithHourlyRollup(
+                "node_01",
+                from,
+                to,
+                "6h"
+        );
+
+        assertEquals(1, trend.size());
+        assertEquals(Instant.parse("2026-07-10T06:00:00Z"), trend.get(0).getTimestamp());
+        assertEquals(802, trend.get(0).getCo2Ppm());
+    }
+
+    @Test
+    void readCo2TrendWithHourlyRollup_should_fall_back_to_raw_when_hourly_rollup_has_gap() {
+        Instant from = Instant.parse("2026-07-10T00:00:00Z");
+        Instant to = Instant.parse("2026-07-10T04:00:00Z");
+        FluxTable rollupTable = mock(FluxTable.class);
+        List<FluxRecord> hourlyRollupRecords = List.of(
+                hourlyRollupRecord("2026-07-10T01:00:00Z", 800.0, 720L),
+                hourlyRollupRecord("2026-07-10T03:00:00Z", 840.0, 720L),
+                hourlyRollupRecord("2026-07-10T04:00:00Z", 860.0, 720L)
+        );
+        when(rollupTable.getRecords()).thenReturn(hourlyRollupRecords);
+
+        FluxTable rawTable = mock(FluxTable.class);
+        FluxRecord rawRecord = mock(FluxRecord.class);
+        when(rawRecord.getValue()).thenReturn(815.0);
+        when(rawRecord.getTime()).thenReturn(Instant.parse("2026-07-10T04:00:00Z"));
+        when(rawTable.getRecords()).thenReturn(List.of(rawRecord));
+
+        when(queryApi.query(anyString(), eq("airs-org")))
+                .thenReturn(List.of(rollupTable))
+                .thenReturn(List.of(rawTable));
+
+        List<Co2TrendItem> trend = influxDht22Reader.readCo2TrendWithHourlyRollup(
+                "node_01",
+                from,
+                to,
+                "1h"
+        );
+
+        assertEquals(1, trend.size());
+        assertEquals(815, trend.get(0).getCo2Ppm());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(queryApi, times(2)).query(queryCaptor.capture(), eq("airs-org"));
+        List<String> queries = queryCaptor.getAllValues();
+        assertEquals(true, queries.get(0).contains("from(bucket: \"airs_rollup\")"));
+        assertEquals(true, queries.get(1).contains("from(bucket: \"airs\")"));
+        assertEquals(true, queries.get(1).contains("aggregateWindow(every: 1h, fn: mean, createEmpty: false)"));
+    }
+
+    @Test
     void readAiSensorTrend_should_query_recent_measurements_and_calculate_ai_trend_values() {
         Instant to = Instant.parse("2026-07-09T01:30:00Z");
 
@@ -306,6 +482,14 @@ class InfluxDht22ReaderTest {
         when(record.getValueByKey("temperature_c")).thenReturn(temperature);
         when(record.getValueByKey("humidity_pct")).thenReturn(humidity);
         when(record.getValueByKey("co2_ppm")).thenReturn(co2Ppm);
+        when(record.getTime()).thenReturn(Instant.parse(timestamp));
+        return record;
+    }
+
+    private FluxRecord hourlyRollupRecord(String timestamp, double co2Mean, long co2Count) {
+        FluxRecord record = mock(FluxRecord.class);
+        when(record.getValueByKey("co2_mean")).thenReturn(co2Mean);
+        when(record.getValueByKey("co2_count")).thenReturn(co2Count);
         when(record.getTime()).thenReturn(Instant.parse(timestamp));
         return record;
     }

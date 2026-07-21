@@ -6,11 +6,13 @@ import com.airs.backend.node.dto.list.AdminNodeListResponse;
 import com.airs.backend.node.dto.registration.AdminNodeRegistrationRequest;
 import com.airs.backend.node.dto.registration.AdminNodeRegistrationResponse;
 import com.airs.backend.node.dto.trend.AdminNodeCo2TrendResponse;
+import com.airs.backend.node.dto.trend.AdminNodeSensorTrendResponse;
 import com.airs.backend.node.service.AdminNodeCo2TrendService;
 import com.airs.backend.node.service.AdminNodeDeletionService;
 import com.airs.backend.node.service.AdminNodeDetailService;
 import com.airs.backend.node.service.AdminNodeListService;
 import com.airs.backend.node.service.AdminNodeRegistrationService;
+import com.airs.backend.node.service.AdminNodeSensorTrendService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -33,6 +35,7 @@ public class AdminNodeController {
     private final AdminNodeListService adminNodeListService;
     private final AdminNodeDetailService adminNodeDetailService;
     private final AdminNodeCo2TrendService adminNodeCo2TrendService;
+    private final AdminNodeSensorTrendService adminNodeSensorTrendService;
     private final AdminNodeRegistrationService adminNodeRegistrationService;
     private final AdminNodeDeletionService adminNodeDeletionService;
 
@@ -68,6 +71,22 @@ public class AdminNodeController {
                 period,
                 hours,
                 window
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{nodeId}/sensor-trend")
+    public ResponseEntity<AdminNodeSensorTrendResponse> getSensorTrend(
+            @AuthenticationPrincipal CurrentUserPrincipal currentUser,
+            @PathVariable String nodeId,
+            @RequestParam(required = false) String metric,
+            @RequestParam(required = false) String period
+    ) {
+        AdminNodeSensorTrendResponse response = adminNodeSensorTrendService.getSensorTrend(
+                currentUser.getUserId(),
+                nodeId,
+                metric,
+                period
         );
         return ResponseEntity.ok(response);
     }

@@ -18,6 +18,8 @@ import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.AirsNodeRepository;
 import com.airs.backend.node.repository.NodeInstallationRepository;
 import com.airs.backend.sensor.dto.Co2TrendItem;
+import com.airs.backend.sensor.dto.SensorTrendItem;
+import com.airs.backend.sensor.dto.SensorTrendMetric;
 import com.airs.backend.sensor.influx.InfluxDht22Reader;
 import com.airs.backend.status.entity.ConnectionStatus;
 import com.airs.backend.status.entity.NodeStatusSnapshot;
@@ -256,10 +258,153 @@ class AdminNodeControllerMySqlTest {
     }
 
     @Test
+    void getSensorTrend_should_return_selected_temperature_points() throws Exception {
+        Long adminId = saveNodeListFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+        when(influxDht22Reader.readSensorTrend(
+                eq(SensorTrendMetric.TEMPERATURE),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("10m")
+        )).thenReturn(List.of(
+                new SensorTrendItem(Instant.parse("2026-07-21T00:00:00Z"), 24.3),
+                new SensorTrendItem(Instant.parse("2026-07-21T00:10:00Z"), 24.8)
+        ));
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/sensor-trend")
+                        .param("metric", "temperature")
+                        .param("period", "1d")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nodeId").value("AIRS-2483"))
+                .andExpect(jsonPath("$.metric").value("temperature"))
+                .andExpect(jsonPath("$.period").value("1d"))
+                .andExpect(jsonPath("$.window").value("10m"))
+                .andExpect(jsonPath("$.points[0].value").value(24.3))
+                .andExpect(jsonPath("$.points[1].value").value(24.8));
+
+        verify(influxDht22Reader).readSensorTrend(
+                eq(SensorTrendMetric.TEMPERATURE),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("10m")
+        );
+    }
+
+    @Test
+    void getSensorTrend_should_reject_missing_period() throws Exception {
+        Long adminId = saveNodeListFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/sensor-trend")
+                        .param("metric", "humidity")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("period는 1d, 5d, 1mo, 6mo, 1y 중 하나로 필수입니다."));
+    }
+
+    @Test
+    void getSensorTrend_should_read_hourly_rollup_for_five_day_period() throws Exception {
+        Long adminId = saveNodeListFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+        when(influxDht22Reader.readSensorTrendWithHourlyRollup(
+                eq(SensorTrendMetric.HUMIDITY),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("1h")
+        )).thenReturn(List.of(new SensorTrendItem(Instant.parse("2026-07-21T00:00:00Z"), 52.0)));
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/sensor-trend")
+                        .param("metric", "humidity")
+                        .param("period", "5d")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.metric").value("humidity"))
+                .andExpect(jsonPath("$.period").value("5d"))
+                .andExpect(jsonPath("$.window").value("1h"));
+
+        verify(influxDht22Reader).readSensorTrendWithHourlyRollup(
+                eq(SensorTrendMetric.HUMIDITY),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("1h")
+        );
+    }
+
+    @Test
+    void getSensorTrend_should_read_six_hour_rollup_for_one_month_period() throws Exception {
+        Long adminId = saveNodeListFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+        when(influxDht22Reader.readSensorTrendWithHourlyRollup(
+                eq(SensorTrendMetric.TEMPERATURE),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("6h")
+        )).thenReturn(List.of(new SensorTrendItem(Instant.parse("2026-07-21T00:00:00Z"), 24.3)));
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/sensor-trend")
+                        .param("metric", "temperature")
+                        .param("period", "1mo")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.metric").value("temperature"))
+                .andExpect(jsonPath("$.period").value("1mo"))
+                .andExpect(jsonPath("$.window").value("6h"));
+
+        verify(influxDht22Reader).readSensorTrendWithHourlyRollup(
+                eq(SensorTrendMetric.TEMPERATURE),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("6h")
+        );
+    }
+
+    @Test
+    void getSensorTrend_should_read_daily_rollup_for_six_month_and_one_year_periods() throws Exception {
+        Long adminId = saveNodeListFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+        when(influxDht22Reader.readSensorTrendWithDailyRollup(
+                eq(SensorTrendMetric.CO2),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class)
+        )).thenReturn(List.of(new SensorTrendItem(Instant.parse("2026-07-21T00:00:00Z"), 842.0)));
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/sensor-trend")
+                        .param("metric", "co2")
+                        .param("period", "6mo")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.period").value("6mo"))
+                .andExpect(jsonPath("$.window").value("1d"));
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/sensor-trend")
+                        .param("metric", "co2")
+                        .param("period", "1y")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.period").value("1y"))
+                .andExpect(jsonPath("$.window").value("1d"));
+
+        verify(influxDht22Reader, times(2)).readSensorTrendWithDailyRollup(
+                eq(SensorTrendMetric.CO2),
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class)
+        );
+    }
+
+    @Test
     void getCo2Trend_should_return_period_based_co2_points() throws Exception {
         Long adminId = saveNodeListFixture();
         String accessToken = jwtTokenProvider.generateAccessToken(adminId);
-        when(influxDht22Reader.readCo2Trend(eq("AIRS-2483"), any(Instant.class), any(Instant.class), eq("1h")))
+        when(influxDht22Reader.readCo2TrendWithHourlyRollup(eq("AIRS-2483"), any(Instant.class), any(Instant.class), eq("1h")))
                 .thenReturn(List.of(
                         new Co2TrendItem(Instant.parse("2026-05-28T00:00:00Z"), 900),
                         new Co2TrendItem(Instant.parse("2026-05-28T01:00:00Z"), 980)
@@ -275,7 +420,35 @@ class AdminNodeControllerMySqlTest {
                 .andExpect(jsonPath("$.points[0].co2Ppm").value(900))
                 .andExpect(jsonPath("$.points[1].co2Ppm").value(980));
 
-        verify(influxDht22Reader).readCo2Trend(eq("AIRS-2483"), any(Instant.class), any(Instant.class), eq("1h"));
+        verify(influxDht22Reader).readCo2TrendWithHourlyRollup(
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("1h")
+        );
+    }
+
+    @Test
+    void getCo2Trend_should_read_hourly_rollup_for_one_month_period() throws Exception {
+        Long adminId = saveNodeListFixture();
+        String accessToken = jwtTokenProvider.generateAccessToken(adminId);
+        when(influxDht22Reader.readCo2TrendWithHourlyRollup(eq("AIRS-2483"), any(Instant.class), any(Instant.class), eq("6h")))
+                .thenReturn(List.of(new Co2TrendItem(Instant.parse("2026-05-28T06:00:00Z"), 842)));
+
+        mockMvc.perform(get("/airs/admin/nodes/AIRS-2483/co2-trend")
+                        .param("period", "1mo")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.period").value("1mo"))
+                .andExpect(jsonPath("$.window").value("6h"))
+                .andExpect(jsonPath("$.points[0].co2Ppm").value(842));
+
+        verify(influxDht22Reader).readCo2TrendWithHourlyRollup(
+                eq("AIRS-2483"),
+                any(Instant.class),
+                any(Instant.class),
+                eq("6h")
+        );
     }
 
     @Test

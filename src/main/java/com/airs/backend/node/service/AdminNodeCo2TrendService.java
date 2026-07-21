@@ -49,9 +49,12 @@ public class AdminNodeCo2TrendService {
         Instant to = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         Instant from = resolveFrom(to, resolvedPeriod, hours);
         String resolvedWindow = resolveWindow(resolvedPeriod, window);
+        // 기간별 해상도에 맞는 raw·시간 rollup·일 rollup 조회 경로를 선택합니다.
         List<Co2TrendItem> trendItems = usesDailyRollup(resolvedPeriod)
                 ? influxDht22Reader.readCo2TrendWithDailyRollup(nodeId, from, to)
-                : influxDht22Reader.readCo2Trend(nodeId, from, to, resolvedWindow);
+                : usesHourlyRollup(resolvedPeriod)
+                        ? influxDht22Reader.readCo2TrendWithHourlyRollup(nodeId, from, to, resolvedWindow)
+                        : influxDht22Reader.readCo2Trend(nodeId, from, to, resolvedWindow);
         List<AdminNodeCo2TrendPointResponse> points = trendItems
                 .stream()
                 .map(this::toPointResponse)
@@ -100,6 +103,12 @@ public class AdminNodeCo2TrendService {
     private boolean usesDailyRollup(AdminNodeCo2TrendPeriod period) {
         return period == AdminNodeCo2TrendPeriod.SIX_MONTHS
                 || period == AdminNodeCo2TrendPeriod.ONE_YEAR;
+    }
+
+    // 5일·1개월의 완료 시간대는 1시간 rollup으로 조회합니다.
+    private boolean usesHourlyRollup(AdminNodeCo2TrendPeriod period) {
+        return period == AdminNodeCo2TrendPeriod.FIVE_DAYS
+                || period == AdminNodeCo2TrendPeriod.ONE_MONTH;
     }
 
     private void validateSameCampus(User user, NodeInstallation installation) {

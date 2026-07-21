@@ -742,23 +742,33 @@ public class SpaceStatusEvaluationService {
 
     /** 재실 융합이 확정한 공간 사용 상태다. */
     public enum OccupancyState {
+        // 센서 또는 추세 근거로 사람이 있는 공간이다.
         PRESENT,
+        // 마지막 움직임 이후 stale-after를 넘긴 빈 공간이다.
         ABSENT,
+        // 판정할 센서 이력이 부족한 공간이다.
         UNKNOWN
     }
 
     /** 공조 장비의 동작 모드 또는 실외 온도로 추정한 모드다. */
     public enum HvacMode {
+        // 실내를 낮추는 냉방 동작이다.
         COOLING,
+        // 실내를 높이는 난방 동작이다.
         HEATING
     }
 
     /** CO2 ppm을 UI·정책에서 공통 사용하는 다섯 단계로 분류한다. */
     public enum Co2Status {
+        // 800ppm 이하의 양호 상태다.
         GOOD,
+        // 801~1,000ppm의 보통 상태다.
         NORMAL,
+        // 1,001~1,500ppm의 주의 상태다.
         WARNING,
+        // 1,500ppm 초과의 나쁨 상태다.
         BAD,
+        // CO2 측정값이 없는 상태다.
         UNKNOWN;
 
         static Co2Status from(Integer co2Ppm) {
@@ -785,11 +795,16 @@ public class SpaceStatusEvaluationService {
 
     /** 계산된 comfort score를 화면용 네 단계 상태로 분류한다. */
     public enum ComfortStatus {
+        // 80점 이상인 쾌적 상태다.
         GOOD("쾌적"),
+        // 60~79점인 보통 상태다.
         NORMAL("보통"),
+        // 40~59점인 주의 상태다.
         CAUTION("주의"),
+        // 40점 미만인 나쁨 상태다.
         BAD("나쁨");
 
+        // 화면에 표시할 한국어 comfort 상태명이다.
         private final String labelKo;
 
         ComfortStatus(String labelKo) {
@@ -822,37 +837,57 @@ public class SpaceStatusEvaluationService {
 
     /** 환기 판단의 상세 상태다. */
     public enum VentilationStatus {
+        // 현재 환기 상태가 양호하다.
         GOOD,
+        // 즉시 알림 없이 추이를 관찰할 상태다.
         WATCH,
+        // 환기를 권장하는 상태다.
         RECOMMEND,
+        // 재실과 CO2 조합을 추가 확인할 상태다.
         CHECK,
+        // 즉시 환기가 필요한 상태다.
         URGENT,
+        // CO2 데이터가 없어 환기 판단을 할 수 없는 상태다.
         UNKNOWN
     }
 
     /** 앱/웹과 alert가 사용하는 환기 조치 강도다. */
     public enum VentilationRecommendationLevel {
+        // 별도 환기 조치가 필요 없는 수준이다.
         NONE,
+        // 추이를 관찰할 수준이다.
         OBSERVE,
+        // 환기를 권장할 수준이다.
         RECOMMEND,
+        // 센서나 공간 상태를 확인할 수준이다.
         CHECK,
+        // 즉시 환기 조치가 필요한 수준이다.
         URGENT
     }
 
     /** 냉난방 낭비 alert에 저장할 심각도다. */
     public enum HvacWasteSeverity {
+        // 냉난방 낭비 의심이 없는 상태다.
         NONE,
+        // 운영자가 참고할 정보 수준이다.
         INFO,
+        // 운영자 확인이 필요한 경고 수준이다.
         WARNING
     }
 
     /** 어떤 냉난방 낭비 규칙이 맞았는지를 설명하는 유형이다. */
     public enum HvacWasteType {
+        // 빈 공간에서 냉방이 의심되는 경우다.
         NO_OCCUPANCY_COOLING_SUSPECTED,
+        // 빈 공간에서 냉방이 오래 지속된 경우다.
         PERSISTENT_COOLING_AFTER_EMPTY,
+        // 설정 또는 정책 범위를 넘는 과냉방 경우다.
         OVERCOOLING_SUSPECTED,
+        // 빈 공간에서 난방이 의심되는 경우다.
         NO_OCCUPANCY_HEATING_SUSPECTED,
+        // 빈 공간에서 난방이 오래 지속된 경우다.
         PERSISTENT_HEATING_AFTER_EMPTY,
+        // 설정 또는 정책 범위를 넘는 과난방 경우다.
         OVERHEATING_SUSPECTED
     }
 }

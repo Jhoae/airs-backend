@@ -525,6 +525,61 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /airs/admin/nodes/{nodeId}/sensor-trend:
+    get:
+      tags:
+        - Admin Nodes
+      summary: 관리자 노드 선택 센서 추이 조회
+      description: >
+        노드 상세의 온도·습도·CO2 카드가 선택한 지표 하나만 반환합니다. metric과 period는 모두 필수입니다.
+        1d는 raw sensor_data를 10분 평균으로 읽고, 5d는 sensor_rollup_1h의 1시간 평균을 우선 사용합니다.
+        1mo는 1시간 rollup을 count 가중 6시간 평균으로 묶으며, 6mo와 1y는 sensor_rollup_1d의 일 평균을 우선 사용합니다.
+        필요한 rollup이 없거나 날짜·시간 중간에 공백이 있거나 조회에 실패하면 같은 기간의 raw telemetry로 전체 fallback합니다.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NodeId'
+        - name: metric
+          in: query
+          required: true
+          description: 그래프로 조회할 단일 센서 지표입니다.
+          schema:
+            type: string
+            enum:
+              - temperature
+              - humidity
+              - co2
+            example: temperature
+        - name: period
+          in: query
+          required: true
+          description: >
+            노드 상세의 고정 기간입니다. 1d=10m, 5d=1h, 1mo=6h, 6mo=1d, 1y=1d 집계 간격을 사용합니다.
+          schema:
+            type: string
+            enum:
+              - 1d
+              - 5d
+              - 1mo
+              - 6mo
+              - 1y
+            example: 1mo
+      responses:
+        '200':
+          description: 선택 센서 추이 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminNodeSensorTrendResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /airs/admin/analytics/co2/summary:
     get:
       tags:
@@ -1488,6 +1543,63 @@ components:
         co2Ppm:
           type: integer
           nullable: true
+    AdminNodeSensorTrendResponse:
+      type: object
+      required:
+        - nodeId
+        - metric
+        - period
+        - from
+        - to
+        - window
+        - points
+      properties:
+        nodeId:
+          type: string
+          example: node_01
+        metric:
+          type: string
+          enum:
+            - temperature
+            - humidity
+            - co2
+          example: temperature
+        period:
+          type: string
+          enum:
+            - 1d
+            - 5d
+            - 1mo
+            - 6mo
+            - 1y
+          example: 1d
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        window:
+          type: string
+          example: 10m
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminNodeSensorTrendPointResponse'
+    AdminNodeSensorTrendPointResponse:
+      type: object
+      required:
+        - timestamp
+        - value
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-07-21T03:10:00Z'
+        value:
+          type: number
+          format: double
+          example: 24.3
     AdminCo2SummaryResponse:
       type: object
       properties:
