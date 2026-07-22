@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +31,8 @@ public class NodeSensorTrendMetrics {
     private static final String REDIS_WRITE_TIMER = "airs.node.sensor.trend.redis.write";
     // InfluxDB 읽기와 point 조립 시간을 기록하는 Micrometer meter 이름입니다.
     private static final String INFLUX_LOAD_TIMER = "airs.node.sensor.trend.influx.load";
+    // 5분 보고 전에 백분위 표본이 만료되지 않도록 분포 창을 10분으로 유지합니다.
+    private static final Duration PERCENTILE_EXPIRY = Duration.ofMinutes(10);
 
     // 인메모리 Timer를 등록하고 snapshot을 읽는 Micrometer registry입니다.
     private final MeterRegistry meterRegistry;
@@ -163,9 +166,9 @@ public class NodeSensorTrendMetrics {
                 .forEach(this::logTimerSnapshotWhenChanged);
     }
 
-    // 이전 보고 뒤 새 표본이 생긴 Timer의 process-lifetime 집계를 로그로 출력합니다.
+    // 이전 보고 뒤 새 표본이 생긴 Timer의 누적 count와 최근 10분 분포를 로그로 출력합니다.
     private void logTimerSnapshotWhenChanged(Timer timer) {
-        // 현재 프로세스 기동 이후의 표본 수를 읽습니다.
+        // 현재 프로세스 기동 이후 누적된 표본 수를 읽습니다.
         long currentCount = timer.count();
         // 직전 보고 때의 표본 수를 읽습니다.
         long previousCount = lastReportedCounts.getOrDefault(timer.getId(), 0L);
@@ -175,7 +178,7 @@ public class NodeSensorTrendMetrics {
             return;
         }
 
-        // P50·P95가 비어 있을 때도 안전하게 NaN으로 기록합니다.
+        // 최근 10분 분포에서 P50·P95가 비어 있을 때도 안전하게 NaN으로 기록합니다.
         Map<Double, Double> percentileMs = Arrays.stream(timer.takeSnapshot().percentileValues())
                 .collect(Collectors.toMap(
                         value -> value.percentile(),
@@ -229,7 +232,7 @@ public class NodeSensorTrendMetrics {
             String source,
             String outcome
     ) {
-        // P50/P95는 프로세스 기동 이후 같은 tag 조합의 요청 표본을 기준으로 계산합니다.
+        // P50/P95는 같은 tag 조합의 최근 10분 표본을 기준으로 계산합니다.
         return Timer.builder(name)
                 .description("노드 상세 선택형 센서 추이 성능 계측")
                 .tags(
@@ -238,6 +241,10 @@ public class NodeSensorTrendMetrics {
                         "source", source,
                         "outcome", outcome
                 )
+                // 로그 보고 주기보다 긴 분포 창을 유지해 백분위 값이 0으로 사라지지 않게 합니다.
+                .distributionStatisticExpiry(PERCENTILE_EXPIRY)
+                // 한 개의 10분 창만 사용해 최근 구간의 지연 분포를 읽습니다.
+                .distributionStatisticBufferLength(1)
                 .publishPercentiles(0.5, 0.95)
                 .register(meterRegistry);
     }
