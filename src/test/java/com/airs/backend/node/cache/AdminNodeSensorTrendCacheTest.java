@@ -3,8 +3,10 @@ package com.airs.backend.node.cache;
 import com.airs.backend.node.dto.trend.AdminNodeCo2TrendPeriod;
 import com.airs.backend.node.dto.trend.AdminNodeSensorTrendPointResponse;
 import com.airs.backend.node.dto.trend.AdminNodeSensorTrendResponse;
+import com.airs.backend.node.metrics.NodeSensorTrendMetrics;
 import com.airs.backend.sensor.dto.SensorTrendMetric;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -46,16 +48,16 @@ class AdminNodeSensorTrendCacheTest {
 
     @Test
     void getOrLoad_should_reuse_response_only_for_same_node_metric_and_period() {
-        AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), defaultProperties());
+        AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), defaultProperties(), metrics());
         AtomicInteger loadCount = new AtomicInteger();
 
-        AdminNodeSensorTrendResponse first = cache.getOrLoad(
+        SensorTrendCacheLoadResult first = cache.getOrLoad(
                 "node_01",
                 SensorTrendMetric.TEMPERATURE,
                 AdminNodeCo2TrendPeriod.ONE_MONTH,
                 () -> loadTrend(loadCount, "temperature", "1mo")
         );
-        AdminNodeSensorTrendResponse second = cache.getOrLoad(
+        SensorTrendCacheLoadResult second = cache.getOrLoad(
                 "node_01",
                 SensorTrendMetric.TEMPERATURE,
                 AdminNodeCo2TrendPeriod.ONE_MONTH,
@@ -74,8 +76,10 @@ class AdminNodeSensorTrendCacheTest {
                 () -> loadTrend(loadCount, "temperature", "5d")
         );
 
-        assertEquals(first.getFrom(), second.getFrom());
-        assertEquals(24.3, second.getPoints().getFirst().getValue());
+        assertEquals(first.response().getFrom(), second.response().getFrom());
+        assertEquals(24.3, second.response().getPoints().getFirst().getValue());
+        assertEquals(SensorTrendCacheStatus.MISS, first.cacheStatus());
+        assertEquals(SensorTrendCacheStatus.HIT, second.cacheStatus());
         assertEquals(3, loadCount.get());
         verify(valueOperations, times(3)).set(anyString(), anyString(), any(Duration.class));
     }
@@ -83,17 +87,18 @@ class AdminNodeSensorTrendCacheTest {
     @Test
     void getOrLoad_should_return_fresh_response_when_redis_is_unavailable() {
         when(valueOperations.get(anyString())).thenThrow(new RedisConnectionFailureException("Redis unavailable"));
-        AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), defaultProperties());
+        AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), defaultProperties(), metrics());
         AtomicInteger loadCount = new AtomicInteger();
 
-        AdminNodeSensorTrendResponse response = cache.getOrLoad(
+        SensorTrendCacheLoadResult result = cache.getOrLoad(
                 "node_01",
                 SensorTrendMetric.CO2,
                 AdminNodeCo2TrendPeriod.ONE_DAY,
                 () -> loadTrend(loadCount, "co2", "1d")
         );
 
-        assertEquals("co2", response.getMetric());
+        assertEquals("co2", result.response().getMetric());
+        assertEquals(SensorTrendCacheStatus.MISS, result.cacheStatus());
         assertEquals(1, loadCount.get());
     }
 
@@ -107,6 +112,10 @@ class AdminNodeSensorTrendCacheTest {
 
     private ObjectMapper objectMapper() {
         return new ObjectMapper().findAndRegisterModules();
+    }
+
+    private NodeSensorTrendMetrics metrics() {
+        return new NodeSensorTrendMetrics(new SimpleMeterRegistry(), true);
     }
 
     private AdminNodeSensorTrendResponse loadTrend(AtomicInteger loadCount, String metric, String period) {

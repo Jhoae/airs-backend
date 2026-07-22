@@ -2,9 +2,11 @@ package com.airs.backend.node.cache;
 
 import com.airs.backend.node.dto.trend.AdminNodeCo2TrendPeriod;
 import com.airs.backend.node.dto.trend.AdminNodeSensorTrendResponse;
+import com.airs.backend.node.metrics.NodeSensorTrendMetrics;
 import com.airs.backend.sensor.dto.SensorTrendMetric;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -26,11 +28,14 @@ public class AdminNodeSensorTrendCache {
     private final ObjectMapper objectMapper;
     // 환경별 캐시 사용 여부·TTL·키 접두사를 읽습니다.
     private final NodeSensorTrendCacheProperties properties;
+    // Redis cache 구간의 시간을 별도로 기록합니다.
+    private final NodeSensorTrendMetrics nodeSensorTrendMetrics;
 
     public AdminNodeSensorTrendCache(
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
-            NodeSensorTrendCacheProperties properties
+            NodeSensorTrendCacheProperties properties,
+            NodeSensorTrendMetrics nodeSensorTrendMetrics
     ) {
         // 잘못된 캐시 설정은 앱 시작 시점에 명확하게 차단합니다.
         validate(properties);
@@ -40,10 +45,12 @@ public class AdminNodeSensorTrendCache {
         this.objectMapper = objectMapper;
         // 캐시 정책 객체를 보관합니다.
         this.properties = properties;
+        // Redis read/write 성능 계측기를 보관합니다.
+        this.nodeSensorTrendMetrics = nodeSensorTrendMetrics;
     }
 
     // 같은 노드·지표·기간 요청의 전체 응답을 Redis에서 재사용합니다.
-    public AdminNodeSensorTrendResponse getOrLoad(
+    public SensorTrendCacheLoadResult getOrLoad(
             String nodeId,
             SensorTrendMetric metric,
             AdminNodeCo2TrendPeriod period,
@@ -51,39 +58,54 @@ public class AdminNodeSensorTrendCache {
     ) {
         // 캐시를 끈 환경에서는 원본 InfluxDB 조회 함수를 바로 실행합니다.
         if (!properties.isEnabled()) {
-            return loadFresh(loader);
+            return new SensorTrendCacheLoadResult(loadFresh(loader), SensorTrendCacheStatus.DISABLED);
         }
 
         // 노드·지표·기간별로 서로 충돌하지 않는 Redis 키를 만듭니다.
         String key = buildKey(nodeId, metric, period);
         // 이미 저장한 전체 응답을 먼저 읽습니다.
-        Optional<AdminNodeSensorTrendResponse> cachedResponse = readCachedResponse(key);
+        Optional<AdminNodeSensorTrendResponse> cachedResponse = readCachedResponse(key, metric, period);
 
         // 캐시 적중이면 원본·rollup InfluxDB 조회를 수행하지 않습니다.
         if (cachedResponse.isPresent()) {
-            return cachedResponse.get();
+            return new SensorTrendCacheLoadResult(cachedResponse.get(), SensorTrendCacheStatus.HIT);
         }
 
         // 캐시 미스이면 호출자가 제공한 시계열 조회 함수를 실행합니다.
         AdminNodeSensorTrendResponse freshResponse = loadFresh(loader);
         // 실제 조회 범위와 point를 포함한 응답 전체를 TTL과 함께 저장합니다.
-        writeCachedResponse(key, freshResponse);
+        writeCachedResponse(key, freshResponse, metric, period);
         // 방금 계산한 결과를 호출자에게 반환합니다.
-        return freshResponse;
+        return new SensorTrendCacheLoadResult(freshResponse, SensorTrendCacheStatus.MISS);
     }
 
     // Redis JSON을 노드 센서 추이 응답으로 복원합니다.
-    private Optional<AdminNodeSensorTrendResponse> readCachedResponse(String key) {
+    private Optional<AdminNodeSensorTrendResponse> readCachedResponse(
+            String key,
+            SensorTrendMetric metric,
+            AdminNodeCo2TrendPeriod period
+    ) {
+        // Redis 왕복 시간을 재기 시작합니다.
+        Timer.Sample sample = nodeSensorTrendMetrics.start();
         try {
             // Redis에서 노드·지표·기간별 JSON 문자열을 읽습니다.
             String cachedJson = redisTemplate.opsForValue().get(key);
             // 키가 없으면 호출자가 InfluxDB에서 새 결과를 읽도록 빈 결과를 반환합니다.
             if (cachedJson == null) {
+                // 키가 없는 cache miss 읽기 시간을 기록합니다.
+                nodeSensorTrendMetrics.recordRedisRead(sample, metric, period, "miss");
                 return Optional.empty();
             }
             // 저장한 JSON을 API 응답 DTO로 복원합니다.
-            return Optional.of(objectMapper.readValue(cachedJson, AdminNodeSensorTrendResponse.class));
+            Optional<AdminNodeSensorTrendResponse> response = Optional.of(
+                    objectMapper.readValue(cachedJson, AdminNodeSensorTrendResponse.class)
+            );
+            // JSON 복원을 포함한 cache hit 읽기 시간을 기록합니다.
+            nodeSensorTrendMetrics.recordRedisRead(sample, metric, period, "hit");
+            return response;
         } catch (DataAccessException | JsonProcessingException exception) {
+            // Redis 장애 또는 JSON 오류의 읽기 시간을 기록합니다.
+            nodeSensorTrendMetrics.recordRedisRead(sample, metric, period, "error");
             // Redis 장애나 오래된 JSON은 API 실패 대신 원본 조회로 안전하게 우회합니다.
             log.warn("Redis 노드 센서 추이 캐시를 읽지 못했습니다. InfluxDB를 직접 조회합니다. key={}", key, exception);
             return Optional.empty();
@@ -91,13 +113,24 @@ public class AdminNodeSensorTrendCache {
     }
 
     // 새로 조회한 전체 응답을 짧은 TTL로 Redis에 저장합니다.
-    private void writeCachedResponse(String key, AdminNodeSensorTrendResponse response) {
+    private void writeCachedResponse(
+            String key,
+            AdminNodeSensorTrendResponse response,
+            SensorTrendMetric metric,
+            AdminNodeCo2TrendPeriod period
+    ) {
+        // JSON 직렬화와 Redis 저장 시간을 재기 시작합니다.
+        Timer.Sample sample = nodeSensorTrendMetrics.start();
         try {
             // 응답의 실제 from·to·window·points를 모두 JSON으로 변환합니다.
             String responseJson = objectMapper.writeValueAsString(response);
             // 같은 키가 있으면 최신 응답과 TTL로 교체합니다.
             redisTemplate.opsForValue().set(key, responseJson, Duration.ofSeconds(properties.getTtlSeconds()));
+            // 정상 cache write 시간을 기록합니다.
+            nodeSensorTrendMetrics.recordRedisWrite(sample, metric, period, "success");
         } catch (DataAccessException | JsonProcessingException exception) {
+            // 실패한 cache write 시간도 운영 원인 분석을 위해 기록합니다.
+            nodeSensorTrendMetrics.recordRedisWrite(sample, metric, period, "error");
             // Redis 쓰기 실패는 다음 요청의 재조회만 유발하고 사용자 응답은 유지합니다.
             log.warn("Redis 노드 센서 추이 캐시를 저장하지 못했습니다. 다음 요청에서 InfluxDB를 다시 조회합니다. key={}", key, exception);
         }
