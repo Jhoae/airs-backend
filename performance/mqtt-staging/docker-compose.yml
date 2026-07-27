@@ -1,0 +1,197 @@
+# 운영 Compose와 이름·네트워크·볼륨을 분리한 로컬 MQTT 부하 실험 환경입니다.
+name: airs-perf-staging
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: "no"
+    environment:
+      MYSQL_DATABASE: airs_stage
+      MYSQL_USER: airs_stage
+      MYSQL_PASSWORD: airs-stage-password
+      MYSQL_ROOT_PASSWORD: airs-stage-root-password
+      TZ: Asia/Seoul
+    ports:
+      # Mac에서만 점검할 수 있도록 loopback 주소에만 바인딩합니다.
+      - "127.0.0.1:13306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  influxdb:
+    image: influxdb:2.7
+    restart: "no"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: stage-admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: airs-stage-influx-password
+      DOCKER_INFLUXDB_INIT_ORG: airs_stage
+      DOCKER_INFLUXDB_INIT_BUCKET: airs_stage_raw
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: airs-stage-influx-token-for-local-tests-only
+    ports:
+      # 운영 InfluxDB와 충돌하지 않도록 다른 loopback 포트를 사용합니다.
+      - "127.0.0.1:18086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  influx-init:
+    image: influxdb:2.7
+    restart: "no"
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_ORG: airs_stage
+      INFLUX_TOKEN: airs-stage-influx-token-for-local-tests-only
+      INFLUX_ROLLUP_BUCKET: airs_stage_rollup
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        if influx bucket list --host "$$INFLUX_URL" --org "$$INFLUX_ORG" --token "$$INFLUX_TOKEN" | grep -Fq "$$INFLUX_ROLLUP_BUCKET"; then
+          exit 0
+        fi
+        influx bucket create --host "$$INFLUX_URL" --org "$$INFLUX_ORG" --token "$$INFLUX_TOKEN" --name "$$INFLUX_ROLLUP_BUCKET"
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: "no"
+    ports:
+      # 외부 네트워크에는 노출하지 않고 Mac의 실험 도구만 접속하게 합니다.
+      - "127.0.0.1:11883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    restart: "no"
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      # 캐시 상태는 로컬 진단에만 쓰므로 loopback 포트만 엽니다.
+      - "127.0.0.1:16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: "no"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+      influx-init:
+        condition: service_completed_successfully
+      mosquitto:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/airs_stage?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: airs_stage
+      SPRING_DATASOURCE_PASSWORD: airs-stage-password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      AIRS_FLYWAY_ENABLED: "true"
+      JWT_SECRET_KEY: airs-stage-jwt-secret-key-for-local-tests-only
+      JWT_ACCESS_TOKEN_EXPIRATION_MINUTES: "60"
+      AIRS_CORS_ALLOWED_ORIGINS: "*"
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: airs-stage-influx-token-for-local-tests-only
+      INFLUX_ORG: airs_stage
+      INFLUX_BUCKET: airs_stage_raw
+      INFLUX_MEASUREMENT: sensor_data
+      INFLUX_NODE_ID_TAG: node_id
+      INFLUX_ROLLUP_BUCKET: airs_stage_rollup
+      INFLUX_ROLLUP_MEASUREMENT: sensor_rollup_1h
+      MQTT_ENABLED: "true"
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC: airs/node/+/telemetry
+      OCCUPANCY_STALE_AFTER_MINUTES: "10"
+      OCCUPANCY_INFLUX_WRITE_ENABLED: "true"
+      AIRS_AI_EVALUATION_SCHEDULER_ENABLED: "true"
+      AIRS_AI_EVALUATION_SCHEDULER_INITIAL_DELAY_MS: "5000"
+      AIRS_AI_EVALUATION_SCHEDULER_FIXED_DELAY_MS: "10000"
+      AIRS_REDIS_HOST: redis
+      AIRS_REDIS_PORT: "6379"
+      AIRS_REDIS_CONNECT_TIMEOUT: 500ms
+      AIRS_REDIS_TIMEOUT: 500ms
+      AIRS_NODE_SENSOR_TREND_CACHE_ENABLED: "true"
+      AIRS_NODE_SENSOR_TREND_CACHE_TTL_SECONDS: "30"
+      AIRS_NODE_SENSOR_TREND_CACHE_STALE_TTL_SECONDS: "60"
+      AIRS_NODE_SENSOR_TREND_CACHE_KEY_PREFIX: airs:stage:node:sensor-trend:v1
+      AIRS_NODE_SENSOR_TREND_CACHE_LOAD_LOCK_TTL_SECONDS: "10"
+      AIRS_NODE_SENSOR_TREND_CACHE_LOAD_WAIT_MILLIS: "1000"
+      AIRS_NODE_SENSOR_TREND_CACHE_LOAD_POLL_MILLIS: "25"
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70.0
+      TZ: Asia/Seoul
+    ports:
+      # k6와 curl은 로컬 loopback API만 호출합니다.
+      - "127.0.0.1:18080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  seed:
+    image: mysql:8.4
+    restart: "no"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      MYSQL_PWD: airs-stage-root-password
+    volumes:
+      - ./mysql/seed.sql:/seed/seed.sql:ro
+    command:
+      - /bin/sh
+      - -ec
+      - mysql -h mysql -uroot --default-character-set=utf8mb4 airs_stage < /seed/seed.sql
+
+  simulator:
+    image: eclipse-mosquitto:2
+    restart: "no"
+    profiles: ["simulator"]
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_QOS: "0"
+      SIMULATOR_NODE_COUNT: ${SIMULATOR_NODE_COUNT:-10}
+      SIMULATOR_INTERVAL_SECONDS: ${SIMULATOR_INTERVAL_SECONDS:-5}
+      SIMULATOR_DURATION_SECONDS: ${SIMULATOR_DURATION_SECONDS:-120}
+      SIMULATOR_CO2_MODE: ${SIMULATOR_CO2_MODE:-steady}
+    volumes:
+      - ./simulator/publish-telemetry.sh:/simulator/publish-telemetry.sh:ro
+    command: ["/bin/sh", "/simulator/publish-telemetry.sh"]
+
+volumes:
+  mysql-data:
+  influxdb-data:
+  mosquitto-data:

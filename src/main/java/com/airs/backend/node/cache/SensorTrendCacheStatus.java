@@ -8,6 +8,8 @@ public enum SensorTrendCacheStatus {
     MISS,
     // 다른 요청이 채운 Redis 응답을 짧게 기다린 뒤 재사용했습니다.
     HIT_AFTER_WAIT,
+    // 만료된 응답을 갱신 중인 동안 마지막 성공 응답을 즉시 재사용했습니다.
+    STALE_HIT,
     // leader 응답을 기다렸지만 시간 안에 채워지지 않아 직접 조회했습니다.
     MISS_TIMEOUT_FALLBACK,
     // 설정상 Redis를 사용하지 않고 원본 조회를 수행했습니다.

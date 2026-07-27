@@ -16,6 +16,8 @@ public class NodeSensorTrendCacheProperties {
     private boolean enabled = true;
     // 모든 선택 기간이 최신 측정값을 포함하므로 동일한 짧은 TTL을 사용합니다.
     private long ttlSeconds = 30;
+    // 갱신 중 follower가 마지막 성공 응답을 즉시 재사용할 수 있는 추가 보관 시간입니다.
+    private long staleTtlSeconds = 60;
     // 다른 캐시와 충돌하지 않도록 노드 센서 추이 전용 접두사를 사용합니다.
     private String keyPrefix = "airs:node:sensor-trend:v1";
     // 같은 캐시 미스가 몰릴 때 한 요청만 InfluxDB를 읽도록 잠금 유지 시간을 둡니다.

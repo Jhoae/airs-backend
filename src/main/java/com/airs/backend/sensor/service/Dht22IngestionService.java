@@ -51,7 +51,8 @@ public class Dht22IngestionService {
         // 장치 시각이 없으면 수신 서버 시각을 원본 시각으로 보정한다.
         if (payload.getTimestamp() == null) {
             payload.setTimestamp(Instant.now());
-            log.info("payload에 timestamp가 없어 서버 현재 시각으로 대체했습니다. nodeId={}", nodeId);
+            // timestamp 생략은 지원하는 정상 telemetry 형식이므로 필요할 때만 상세 로그로 확인한다.
+            log.debug("payload에 timestamp가 없어 서버 현재 시각으로 대체했습니다. nodeId={}", nodeId);
         }
 
         // NaN·무한대 온도는 DB와 InfluxDB에 저장하지 않는다.

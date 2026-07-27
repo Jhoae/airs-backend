@@ -47,3 +47,6 @@ docs/troubleshooting/
 # k6의 원본 결과에는 운영 응답·실행 환경 정보가 담길 수 있으므로 Git에 올리지 않습니다.
 performance/k6/results/*
 !performance/k6/results/.gitkeep
+# MQTT staging의 실행 결과는 코드가 아닌 로컬 실험 증적이므로 저장소에 올리지 않습니다.
+performance/mqtt-staging/results/*
+!performance/mqtt-staging/results/.gitkeep

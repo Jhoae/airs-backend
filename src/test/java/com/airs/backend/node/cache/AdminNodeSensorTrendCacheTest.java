@@ -109,7 +109,7 @@ class AdminNodeSensorTrendCacheTest {
     @Test
     void getOrLoad_should_reuse_leader_result_when_same_cache_miss_is_already_loading() throws Exception {
         AdminNodeSensorTrendResponse firstRequestResponse = loadTrend(new AtomicInteger(), "temperature", "1mo");
-        String firstRequestJson = objectMapper().writeValueAsString(firstRequestResponse);
+        String firstRequestJson = cacheEnvelopeJson(firstRequestResponse, Instant.now());
         AtomicInteger readCount = new AtomicInteger();
 
         // 첫 읽기는 캐시 미스이고, 첫 요청이 저장했다고 가정한 두 번째 읽기부터 결과를 돌려줍니다.
@@ -134,10 +134,87 @@ class AdminNodeSensorTrendCacheTest {
         assertEquals(0, followerLoadCount.get());
     }
 
+    @Test
+    void getOrLoad_should_return_stale_response_while_another_request_refreshes_it() throws Exception {
+        AdminNodeSensorTrendResponse staleResponse = loadTrend(new AtomicInteger(), "temperature", "1mo");
+        redisValues.put(
+                "airs:test:node:sensor-trend:v1:node:node_01:metric:temperature:period:1mo",
+                cacheEnvelopeJson(staleResponse, Instant.now().minusSeconds(31))
+        );
+        // 다른 요청이 갱신 잠금을 가진 상태를 만들어 stale 응답을 즉시 반환하는지 검증합니다.
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(false);
+
+        AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), defaultProperties(), metrics());
+        AtomicInteger followerLoadCount = new AtomicInteger();
+
+        SensorTrendCacheLoadResult result = cache.getOrLoad(
+                "node_01",
+                SensorTrendMetric.TEMPERATURE,
+                AdminNodeCo2TrendPeriod.ONE_MONTH,
+                () -> loadTrend(followerLoadCount, "temperature", "1mo")
+        );
+
+        assertEquals(SensorTrendCacheStatus.STALE_HIT, result.cacheStatus());
+        assertEquals(24.3, result.response().getPoints().getFirst().getValue());
+        assertEquals(0, followerLoadCount.get());
+    }
+
+    @Test
+    void getOrLoad_should_return_stale_response_when_only_load_lock_is_unavailable() throws Exception {
+        AdminNodeSensorTrendResponse staleResponse = loadTrend(new AtomicInteger(), "temperature", "1mo");
+        redisValues.put(
+                "airs:test:node:sensor-trend:v1:node:node_01:metric:temperature:period:1mo",
+                cacheEnvelopeJson(staleResponse, Instant.now().minusSeconds(31))
+        );
+        // 값 읽기는 성공했지만 잠금 명령만 일시 실패한 상황을 만들어 InfluxDB 우회를 막는지 검증합니다.
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .thenThrow(new RedisConnectionFailureException("Redis lock unavailable"));
+
+        AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), defaultProperties(), metrics());
+        AtomicInteger fallbackLoadCount = new AtomicInteger();
+
+        SensorTrendCacheLoadResult result = cache.getOrLoad(
+                "node_01",
+                SensorTrendMetric.TEMPERATURE,
+                AdminNodeCo2TrendPeriod.ONE_MONTH,
+                () -> loadTrend(fallbackLoadCount, "temperature", "1mo")
+        );
+
+        assertEquals(SensorTrendCacheStatus.STALE_HIT, result.cacheStatus());
+        assertEquals(24.3, result.response().getPoints().getFirst().getValue());
+        assertEquals(0, fallbackLoadCount.get());
+    }
+
+    @Test
+    void getOrLoad_should_treat_legacy_cache_json_as_stale_during_rollout() throws Exception {
+        AdminNodeSensorTrendResponse legacyResponse = loadTrend(new AtomicInteger(), "temperature", "1mo");
+        redisValues.put(
+                "airs:test:node:sensor-trend:v1:node:node_01:metric:temperature:period:1mo",
+                objectMapper().writeValueAsString(legacyResponse)
+        );
+        // 다른 요청이 새 envelope 형식으로 갱신 중이면 이전 형식을 즉시 재사용합니다.
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(false);
+
+        AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), defaultProperties(), metrics());
+        AtomicInteger followerLoadCount = new AtomicInteger();
+
+        SensorTrendCacheLoadResult result = cache.getOrLoad(
+                "node_01",
+                SensorTrendMetric.TEMPERATURE,
+                AdminNodeCo2TrendPeriod.ONE_MONTH,
+                () -> loadTrend(followerLoadCount, "temperature", "1mo")
+        );
+
+        assertEquals(SensorTrendCacheStatus.STALE_HIT, result.cacheStatus());
+        assertEquals(24.3, result.response().getPoints().getFirst().getValue());
+        assertEquals(0, followerLoadCount.get());
+    }
+
     private NodeSensorTrendCacheProperties defaultProperties() {
         NodeSensorTrendCacheProperties properties = new NodeSensorTrendCacheProperties();
         properties.setEnabled(true);
         properties.setTtlSeconds(30);
+        properties.setStaleTtlSeconds(60);
         properties.setKeyPrefix("airs:test:node:sensor-trend:v1");
         properties.setLoadLockTtlSeconds(10);
         properties.setLoadWaitMillis(1000);
@@ -157,6 +234,13 @@ class AdminNodeSensorTrendCacheTest {
 
     private NodeSensorTrendMetrics metrics() {
         return new NodeSensorTrendMetrics(new SimpleMeterRegistry(), true);
+    }
+
+    private String cacheEnvelopeJson(AdminNodeSensorTrendResponse response, Instant cachedAt) throws Exception {
+        return objectMapper().writeValueAsString(Map.of(
+                "cachedAtEpochMilli", cachedAt.toEpochMilli(),
+                "response", response
+        ));
     }
 
     private AdminNodeSensorTrendResponse loadTrend(AtomicInteger loadCount, String metric, String period) {

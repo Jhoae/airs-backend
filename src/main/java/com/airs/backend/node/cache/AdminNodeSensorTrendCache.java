@@ -14,6 +14,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -72,12 +73,12 @@ public class AdminNodeSensorTrendCache {
 
         // 노드·지표·기간별로 서로 충돌하지 않는 Redis 키를 만듭니다.
         String key = buildKey(nodeId, metric, period);
-        // 이미 저장한 전체 응답을 먼저 읽습니다.
-        Optional<AdminNodeSensorTrendResponse> cachedResponse = readCachedResponse(key, metric, period);
+        // 이미 저장한 전체 응답과 정상 TTL 여부를 먼저 읽습니다.
+        Optional<CachedResponse> cachedResponse = readCachedResponse(key, metric, period);
 
-        // 캐시 적중이면 원본·rollup InfluxDB 조회를 수행하지 않습니다.
-        if (cachedResponse.isPresent()) {
-            return new SensorTrendCacheLoadResult(cachedResponse.get(), SensorTrendCacheStatus.HIT);
+        // 정상 TTL 안의 캐시 적중이면 원본·rollup InfluxDB 조회를 수행하지 않습니다.
+        if (cachedResponse.filter(CachedResponse::fresh).isPresent()) {
+            return new SensorTrendCacheLoadResult(cachedResponse.get().response(), SensorTrendCacheStatus.HIT);
         }
 
         // 동일 키의 캐시 미스가 몰릴 때 한 요청만 InfluxDB를 읽도록 짧은 Redis 잠금을 시도합니다.
@@ -88,9 +89,9 @@ public class AdminNodeSensorTrendCache {
         // 잠금을 얻은 첫 요청은 다른 요청이 방금 결과를 채웠는지 한 번 더 확인합니다.
         if (loadLockState == LoadLockState.ACQUIRED) {
             try {
-                Optional<AdminNodeSensorTrendResponse> refreshedResponse = readCachedResponse(key, metric, period);
-                if (refreshedResponse.isPresent()) {
-                    return new SensorTrendCacheLoadResult(refreshedResponse.get(), SensorTrendCacheStatus.HIT);
+                Optional<CachedResponse> refreshedResponse = readCachedResponse(key, metric, period);
+                if (refreshedResponse.filter(CachedResponse::fresh).isPresent()) {
+                    return new SensorTrendCacheLoadResult(refreshedResponse.get().response(), SensorTrendCacheStatus.HIT);
                 }
 
                 // 첫 요청만 원본·rollup InfluxDB 조회와 Redis 저장을 수행합니다.
@@ -103,11 +104,16 @@ public class AdminNodeSensorTrendCache {
             }
         }
 
-        // 다른 첫 요청이 조회 중이면 짧게 결과 캐시를 기다려 중복 InfluxDB 조회를 줄입니다.
+        // 이전 성공 응답이 있으면 leader 대기나 잠금의 일시 실패와 관계없이 바로 반환해 InfluxDB 재조회 폭증을 막습니다.
+        if ((loadLockState == LoadLockState.BUSY || loadLockState == LoadLockState.UNAVAILABLE) && cachedResponse.isPresent()) {
+            return new SensorTrendCacheLoadResult(cachedResponse.get().response(), SensorTrendCacheStatus.STALE_HIT);
+        }
+
+        // cold miss에서만 다른 첫 요청이 조회 중인 결과를 짧게 기다려 중복 InfluxDB 조회를 줄입니다.
         if (loadLockState == LoadLockState.BUSY) {
-            Optional<AdminNodeSensorTrendResponse> waitedResponse = waitForCachedResponse(key, metric, period);
+            Optional<CachedResponse> waitedResponse = waitForCachedResponse(key, metric, period);
             if (waitedResponse.isPresent()) {
-                return new SensorTrendCacheLoadResult(waitedResponse.get(), SensorTrendCacheStatus.HIT_AFTER_WAIT);
+                return new SensorTrendCacheLoadResult(waitedResponse.get().response(), SensorTrendCacheStatus.HIT_AFTER_WAIT);
             }
         }
 
@@ -117,8 +123,8 @@ public class AdminNodeSensorTrendCache {
         return new SensorTrendCacheLoadResult(freshResponse, SensorTrendCacheStatus.MISS_TIMEOUT_FALLBACK);
     }
 
-    // Redis JSON을 노드 센서 추이 응답으로 복원합니다.
-    private Optional<AdminNodeSensorTrendResponse> readCachedResponse(
+    // Redis JSON을 노드 센서 추이 응답과 TTL 상태로 복원합니다.
+    private Optional<CachedResponse> readCachedResponse(
             String key,
             SensorTrendMetric metric,
             AdminNodeCo2TrendPeriod period
@@ -134,13 +140,20 @@ public class AdminNodeSensorTrendCache {
                 nodeSensorTrendMetrics.recordRedisRead(sample, metric, period, "miss");
                 return Optional.empty();
             }
-            // 저장한 JSON을 API 응답 DTO로 복원합니다.
-            Optional<AdminNodeSensorTrendResponse> response = Optional.of(
-                    objectMapper.readValue(cachedJson, AdminNodeSensorTrendResponse.class)
-            );
-            // JSON 복원을 포함한 cache hit 읽기 시간을 기록합니다.
-            nodeSensorTrendMetrics.recordRedisRead(sample, metric, period, "hit");
-            return response;
+            try {
+                // 저장한 JSON에서 응답과 저장 시각을 함께 복원합니다.
+                CachedResponseEnvelope envelope = objectMapper.readValue(cachedJson, CachedResponseEnvelope.class);
+                // 정상 TTL 안이면 최신 캐시, 지나면 갱신 중 재사용 가능한 stale 캐시로 구분합니다.
+                boolean fresh = !envelope.isExpired(properties.getTtlSeconds());
+                // JSON 복원과 TTL 판별을 포함한 Redis 읽기 시간을 기록합니다.
+                nodeSensorTrendMetrics.recordRedisRead(sample, metric, period, fresh ? "hit" : "stale");
+                return Optional.of(new CachedResponse(envelope.response(), fresh));
+            } catch (JsonProcessingException envelopeException) {
+                // 배포 전 형식은 저장 시각이 없으므로 갱신 대상 stale 응답으로만 한 번 호환합니다.
+                AdminNodeSensorTrendResponse legacyResponse = objectMapper.readValue(cachedJson, AdminNodeSensorTrendResponse.class);
+                nodeSensorTrendMetrics.recordRedisRead(sample, metric, period, "legacy");
+                return Optional.of(new CachedResponse(legacyResponse, false));
+            }
         } catch (DataAccessException | JsonProcessingException exception) {
             // Redis 장애 또는 JSON 오류의 읽기 시간을 기록합니다.
             nodeSensorTrendMetrics.recordRedisRead(sample, metric, period, "error");
@@ -160,10 +173,10 @@ public class AdminNodeSensorTrendCache {
         // JSON 직렬화와 Redis 저장 시간을 재기 시작합니다.
         Timer.Sample sample = nodeSensorTrendMetrics.start();
         try {
-            // 응답의 실제 from·to·window·points를 모두 JSON으로 변환합니다.
-            String responseJson = objectMapper.writeValueAsString(response);
-            // 같은 키가 있으면 최신 응답과 TTL로 교체합니다.
-            redisTemplate.opsForValue().set(key, responseJson, Duration.ofSeconds(properties.getTtlSeconds()));
+            // 응답의 실제 from·to·window·points와 저장 시각을 함께 JSON으로 변환합니다.
+            String responseJson = objectMapper.writeValueAsString(new CachedResponseEnvelope(Instant.now().toEpochMilli(), response));
+            // 정상 TTL 뒤에도 갱신 중 쓸 stale 응답을 남기도록 두 TTL 합만큼 보관합니다.
+            redisTemplate.opsForValue().set(key, responseJson, Duration.ofSeconds(properties.getTtlSeconds() + properties.getStaleTtlSeconds()));
             // 정상 cache write 시간을 기록합니다.
             nodeSensorTrendMetrics.recordRedisWrite(sample, metric, period, "success");
         } catch (DataAccessException | JsonProcessingException exception) {
@@ -196,7 +209,7 @@ public class AdminNodeSensorTrendCache {
     }
 
     // 첫 요청이 저장한 응답을 최대 대기 시간까지 반복 확인하여 재사용합니다.
-    private Optional<AdminNodeSensorTrendResponse> waitForCachedResponse(
+    private Optional<CachedResponse> waitForCachedResponse(
             String key,
             SensorTrendMetric metric,
             AdminNodeCo2TrendPeriod period
@@ -208,7 +221,7 @@ public class AdminNodeSensorTrendCache {
                 return Optional.empty();
             }
 
-            Optional<AdminNodeSensorTrendResponse> cachedResponse = readCachedResponse(key, metric, period);
+            Optional<CachedResponse> cachedResponse = readCachedResponse(key, metric, period);
             if (cachedResponse.isPresent()) {
                 return cachedResponse;
             }
@@ -257,6 +270,10 @@ public class AdminNodeSensorTrendCache {
         if (properties.getTtlSeconds() <= 0) {
             throw new IllegalStateException("node.sensor-trend.cache.ttl-seconds는 0보다 커야 합니다.");
         }
+        // stale TTL은 음수일 수 없고 0이면 stale 응답을 사용하지 않습니다.
+        if (properties.getStaleTtlSeconds() < 0) {
+            throw new IllegalStateException("node.sensor-trend.cache.stale-ttl-seconds는 0 이상이어야 합니다.");
+        }
         // 빈 접두사는 다른 캐시 키와 충돌할 수 있습니다.
         if (properties.getKeyPrefix() == null || properties.getKeyPrefix().isBlank()) {
             throw new IllegalStateException("node.sensor-trend.cache.key-prefix는 비어 있을 수 없습니다.");
@@ -276,5 +293,18 @@ public class AdminNodeSensorTrendCache {
         ACQUIRED,
         BUSY,
         UNAVAILABLE
+    }
+
+    // Redis에 저장하는 전체 응답과 저장 시각을 하나의 값으로 묶습니다.
+    private record CachedResponseEnvelope(long cachedAtEpochMilli, AdminNodeSensorTrendResponse response) {
+
+        // 저장 시각에서 정상 TTL이 지났는지 판별합니다.
+        private boolean isExpired(long ttlSeconds) {
+            return Instant.now().toEpochMilli() - cachedAtEpochMilli >= Duration.ofSeconds(ttlSeconds).toMillis();
+        }
+    }
+
+    // 호출자에게 응답과 정상 TTL 여부를 함께 전달합니다.
+    private record CachedResponse(AdminNodeSensorTrendResponse response, boolean fresh) {
     }
 }
