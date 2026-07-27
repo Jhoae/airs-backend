@@ -18,4 +18,10 @@ public class NodeSensorTrendCacheProperties {
     private long ttlSeconds = 30;
     // 다른 캐시와 충돌하지 않도록 노드 센서 추이 전용 접두사를 사용합니다.
     private String keyPrefix = "airs:node:sensor-trend:v1";
+    // 같은 캐시 미스가 몰릴 때 한 요청만 InfluxDB를 읽도록 잠금 유지 시간을 둡니다.
+    private long loadLockTtlSeconds = 10;
+    // 잠금을 얻지 못한 요청이 leader 결과를 기다리는 최대 시간입니다.
+    private long loadWaitMillis = 1000;
+    // 대기 중 Redis 결과를 다시 확인하는 간격입니다.
+    private long loadPollMillis = 25;
 }

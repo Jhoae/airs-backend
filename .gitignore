@@ -43,3 +43,7 @@ src/test/resources/application.properties
 
 *.log
 docs/troubleshooting/
+
+# k6의 원본 결과에는 운영 응답·실행 환경 정보가 담길 수 있으므로 Git에 올리지 않습니다.
+performance/k6/results/*
+!performance/k6/results/.gitkeep

@@ -77,8 +77,8 @@ jobs:
           # Git에서 관리하는 운영 compose를 실제 배포 compose에 반영한다.
           cp deploy/raspberry/docker-compose.yml /home/sogangairs/service/compose/docker-compose.yml
 
-          # InfluxDB Task is deployed from the same backend revision as the API.
-          # The script creates or updates only the derived rollup bucket and task.
+          # API와 같은 backend revision의 InfluxDB rollup Task를 반영한다.
+          # 이 스크립트는 파생 rollup bucket과 Task만 생성하거나 갱신한다.
           bash deploy/raspberry/influx/upsert-rollup-task.sh
 
           cd /home/sogangairs/service/compose
@@ -101,8 +101,7 @@ jobs:
 
           docker compose ps spring
 
-          # Keep the active bind-mounted Caddyfile synchronized with Git only
-          # after validating the candidate and confirming Spring is healthy.
+          # 후보 Caddyfile 검증과 Spring 정상 확인 후에만 Git 설정을 bind mount 경로에 반영한다.
           docker compose up -d caddy
           bash /home/sogangairs/service/backend/deploy/raspberry/sync-caddyfile.sh
           REMOTE

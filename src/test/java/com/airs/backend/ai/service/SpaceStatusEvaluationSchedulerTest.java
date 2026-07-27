@@ -203,7 +203,7 @@ class SpaceStatusEvaluationSchedulerTest {
                         List.of("CO2_HIGH")
                 ),
                 new HvacWasteResult(false, HvacWasteSeverity.NONE, null, null, List.of()),
-                new ReportSummaryValues(74, 1128, Co2Status.WARNING, OccupancyState.PRESENT, true, false)
+                new ReportSummaryValues(74, 1128, null, Co2Status.WARNING, OccupancyState.PRESENT, true, false)
         );
     }
 

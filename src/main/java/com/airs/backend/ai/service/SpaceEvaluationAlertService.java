@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 규칙 평가 결과를 {@code alerts} 테이블의 ACTIVE/RESOLVED lifecycle로 동기화한다.
@@ -30,6 +31,8 @@ public class SpaceEvaluationAlertService {
 
     // dedup key와 ACTIVE 상태로 기존 알림을 찾거나 새 row를 저장한다.
     private final AlertRepository alertRepository;
+    // CO2 변화량 알림의 생성·유지·해결 기준을 독립적으로 판단한다.
+    private final Co2RapidRiseAlertPolicy co2RapidRiseAlertPolicy;
 
     @Transactional
     public void syncAlerts(NodeInstallation installation, SpaceEvaluationResult result) {
@@ -37,8 +40,81 @@ public class SpaceEvaluationAlertService {
         LocalDateTime detectedAt = result.evaluatedAt().toLocalDateTime();
         // CO2/환기 결과를 VENTILATION_RECOMMENDED 타입 알림으로 반영한다.
         syncVentilationAlert(installation, result.ventilation(), result.reportSummaryValues().co2Ppm(), detectedAt);
+        // 절대 CO2 초과와 겹치지 않는 빠른 CO2 상승을 별도 WARNING 알림으로 반영한다.
+        syncCo2RapidRiseAlert(
+                installation,
+                result.reportSummaryValues().co2Ppm(),
+                result.reportSummaryValues().co2Rate10m(),
+                detectedAt
+        );
         // 냉난방 낭비 결과를 HVAC_WASTE_SUSPECTED 타입 알림으로 별도 반영한다.
         syncHvacWasteAlert(installation, result.hvacWaste(), detectedAt);
+    }
+
+    private void syncCo2RapidRiseAlert(
+            NodeInstallation installation,
+            Integer co2Ppm,
+            Double co2Rate10m,
+            LocalDateTime detectedAt
+    ) {
+        // 같은 노드의 빠른 상승은 하나의 lifecycle을 갖는 하나의 알림으로 관리한다.
+        AlertType alertType = AlertType.CO2_RAPID_RISE;
+        // 예: node_01:CO2_RAPID_RISE로 같은 ACTIVE 알림을 찾는다.
+        String dedupKey = dedupKey(installation, alertType);
+        // 새 행 생성 여부와 유지 기준을 구분하려고 기존 ACTIVE 행을 한 번만 읽는다.
+        Optional<Alert> existingActiveAlert = alertRepository.findByDedupKeyAndStatus(dedupKey, AlertStatus.ACTIVE);
+        // 현재 CO2, 10분 변화량, 기존 활성 여부를 정책에 전달한다.
+        Co2RapidRiseAlertPolicy.Decision decision = co2RapidRiseAlertPolicy.decide(
+                co2Ppm,
+                co2Rate10m,
+                existingActiveAlert.isPresent()
+        );
+
+        // 변화량 근거가 없거나 새 경고 기준에 못 미치면 현재 알림 lifecycle을 임의로 바꾸지 않는다.
+        if (decision == Co2RapidRiseAlertPolicy.Decision.KEEP_UNCHANGED) {
+            return;
+        }
+
+        // 정상화 또는 절대값 경고 구간 전환이면 기존 ACTIVE 알림만 이력으로 닫는다.
+        if (decision == Co2RapidRiseAlertPolicy.Decision.RESOLVE) {
+            existingActiveAlert.ifPresent(alert -> alert.resolve(detectedAt));
+            return;
+        }
+
+        // 변화량 값은 null이 아닌 상태에서만 ACTIVATE/KEEP_ACTIVE 결정이 가능하다.
+        BigDecimal metricValue = BigDecimal.valueOf(co2Rate10m);
+        // 화면이 단일 문자열을 조합하지 않아도 되도록 현재 CO2와 상승폭을 함께 기록한다.
+        String message = "10분 동안 CO2가 " + formatPpm(co2Rate10m)
+                + "ppm 상승했습니다. 현재 " + co2Ppm + "ppm이므로 환기를 권장합니다.";
+
+        // 기존 ACTIVE 행이 있으면 새 행을 만들지 않고 가장 최근 변화량·문구·감지 시각만 갱신한다.
+        existingActiveAlert.ifPresentOrElse(
+                alert -> alert.refresh(
+                        AlertSeverity.WARNING,
+                        "CO2 급상승 감지",
+                        message,
+                        "co2_rate_10m",
+                        metricValue,
+                        "ppm/10min",
+                        detectedAt
+                ),
+                // 새 경고 조건을 처음 만족하면 현재 node/space/campus FK를 가진 ACTIVE 행을 저장한다.
+                () -> alertRepository.save(new Alert(
+                        installation.getSpace().getCampus(),
+                        installation.getSpace(),
+                        installation.getNode(),
+                        alertType,
+                        AlertSeverity.WARNING,
+                        AlertAudience.ADMIN,
+                        "CO2 급상승 감지",
+                        message,
+                        "co2_rate_10m",
+                        metricValue,
+                        "ppm/10min",
+                        dedupKey,
+                        detectedAt
+                ))
+        );
     }
 
     private void syncVentilationAlert(
@@ -199,5 +275,10 @@ public class SpaceEvaluationAlertService {
     private String dedupKey(NodeInstallation installation, AlertType alertType) {
         // 노드 ID와 알림 타입의 조합은 동일 문제가 반복될 때 같은 ACTIVE row를 찾는 안정적인 키다.
         return installation.getNode().getId() + ":" + alertType.name();
+    }
+
+    private String formatPpm(Double value) {
+        // 125.0은 125로, 125.5는 125.5로 보여줘 알림 문구를 읽기 쉽게 만든다.
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
     }
 }

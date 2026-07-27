@@ -44,6 +44,8 @@ class AdminNodeSensorTrendCacheTest {
             redisValues.put(invocation.getArgument(0), invocation.getArgument(1));
             return null;
         }).when(valueOperations).set(anyString(), anyString(), any(Duration.class));
+        // 기본 요청은 첫 요청이 되어 원본 조회를 한 번 수행하도록 설정합니다.
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
     }
 
     @Test
@@ -87,6 +89,8 @@ class AdminNodeSensorTrendCacheTest {
     @Test
     void getOrLoad_should_return_fresh_response_when_redis_is_unavailable() {
         when(valueOperations.get(anyString())).thenThrow(new RedisConnectionFailureException("Redis unavailable"));
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .thenThrow(new RedisConnectionFailureException("Redis unavailable"));
         AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), defaultProperties(), metrics());
         AtomicInteger loadCount = new AtomicInteger();
 
@@ -98,8 +102,36 @@ class AdminNodeSensorTrendCacheTest {
         );
 
         assertEquals("co2", result.response().getMetric());
-        assertEquals(SensorTrendCacheStatus.MISS, result.cacheStatus());
+        assertEquals(SensorTrendCacheStatus.MISS_TIMEOUT_FALLBACK, result.cacheStatus());
         assertEquals(1, loadCount.get());
+    }
+
+    @Test
+    void getOrLoad_should_reuse_leader_result_when_same_cache_miss_is_already_loading() throws Exception {
+        AdminNodeSensorTrendResponse firstRequestResponse = loadTrend(new AtomicInteger(), "temperature", "1mo");
+        String firstRequestJson = objectMapper().writeValueAsString(firstRequestResponse);
+        AtomicInteger readCount = new AtomicInteger();
+
+        // 첫 읽기는 캐시 미스이고, 첫 요청이 저장했다고 가정한 두 번째 읽기부터 결과를 돌려줍니다.
+        when(valueOperations.get(anyString())).thenAnswer(invocation ->
+                readCount.incrementAndGet() == 1 ? null : firstRequestJson
+        );
+        // 이미 다른 요청이 잠금을 얻은 상황을 만들어 대기 요청 경로를 검증합니다.
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(false);
+
+        AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), waitingProperties(), metrics());
+        AtomicInteger followerLoadCount = new AtomicInteger();
+
+        SensorTrendCacheLoadResult result = cache.getOrLoad(
+                "node_01",
+                SensorTrendMetric.TEMPERATURE,
+                AdminNodeCo2TrendPeriod.ONE_MONTH,
+                () -> loadTrend(followerLoadCount, "temperature", "1mo")
+        );
+
+        assertEquals(SensorTrendCacheStatus.HIT_AFTER_WAIT, result.cacheStatus());
+        assertEquals(24.3, result.response().getPoints().getFirst().getValue());
+        assertEquals(0, followerLoadCount.get());
     }
 
     private NodeSensorTrendCacheProperties defaultProperties() {
@@ -107,6 +139,15 @@ class AdminNodeSensorTrendCacheTest {
         properties.setEnabled(true);
         properties.setTtlSeconds(30);
         properties.setKeyPrefix("airs:test:node:sensor-trend:v1");
+        properties.setLoadLockTtlSeconds(10);
+        properties.setLoadWaitMillis(1000);
+        properties.setLoadPollMillis(1);
+        return properties;
+    }
+
+    private NodeSensorTrendCacheProperties waitingProperties() {
+        NodeSensorTrendCacheProperties properties = defaultProperties();
+        properties.setLoadWaitMillis(50);
         return properties;
     }
 

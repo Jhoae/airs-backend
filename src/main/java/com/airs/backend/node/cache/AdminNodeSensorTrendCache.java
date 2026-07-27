@@ -10,17 +10,26 @@ import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 // 노드 상세에서 같은 센서·기간을 다시 선택했을 때 InfluxDB 조회를 줄입니다.
 @Slf4j
 @Component
 public class AdminNodeSensorTrendCache {
+
+    // 잠금 소유자만 자신의 Redis 잠금을 삭제하도록 Lua를 사용합니다.
+    private static final DefaultRedisScript<Long> RELEASE_LOAD_LOCK_SCRIPT = new DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+            Long.class
+    );
 
     // Redis 문자열 키·값 연산을 수행합니다.
     private final StringRedisTemplate redisTemplate;
@@ -71,12 +80,41 @@ public class AdminNodeSensorTrendCache {
             return new SensorTrendCacheLoadResult(cachedResponse.get(), SensorTrendCacheStatus.HIT);
         }
 
-        // 캐시 미스이면 호출자가 제공한 시계열 조회 함수를 실행합니다.
+        // 동일 키의 캐시 미스가 몰릴 때 한 요청만 InfluxDB를 읽도록 짧은 Redis 잠금을 시도합니다.
+        String lockKey = buildLoadLockKey(key);
+        String lockToken = UUID.randomUUID().toString();
+        LoadLockState loadLockState = tryAcquireLoadLock(lockKey, lockToken);
+
+        // 잠금을 얻은 첫 요청은 다른 요청이 방금 결과를 채웠는지 한 번 더 확인합니다.
+        if (loadLockState == LoadLockState.ACQUIRED) {
+            try {
+                Optional<AdminNodeSensorTrendResponse> refreshedResponse = readCachedResponse(key, metric, period);
+                if (refreshedResponse.isPresent()) {
+                    return new SensorTrendCacheLoadResult(refreshedResponse.get(), SensorTrendCacheStatus.HIT);
+                }
+
+                // 첫 요청만 원본·rollup InfluxDB 조회와 Redis 저장을 수행합니다.
+                AdminNodeSensorTrendResponse freshResponse = loadFresh(loader);
+                writeCachedResponse(key, freshResponse, metric, period);
+                return new SensorTrendCacheLoadResult(freshResponse, SensorTrendCacheStatus.MISS);
+            } finally {
+                // token이 일치할 때만 잠금을 해제해 늦게 끝난 요청이 다른 leader를 지우지 못하게 합니다.
+                releaseLoadLock(lockKey, lockToken);
+            }
+        }
+
+        // 다른 첫 요청이 조회 중이면 짧게 결과 캐시를 기다려 중복 InfluxDB 조회를 줄입니다.
+        if (loadLockState == LoadLockState.BUSY) {
+            Optional<AdminNodeSensorTrendResponse> waitedResponse = waitForCachedResponse(key, metric, period);
+            if (waitedResponse.isPresent()) {
+                return new SensorTrendCacheLoadResult(waitedResponse.get(), SensorTrendCacheStatus.HIT_AFTER_WAIT);
+            }
+        }
+
+        // Redis 장애 또는 제한 시간 초과에서는 사용자 요청을 막지 않고 기존처럼 직접 조회합니다.
         AdminNodeSensorTrendResponse freshResponse = loadFresh(loader);
-        // 실제 조회 범위와 point를 포함한 응답 전체를 TTL과 함께 저장합니다.
         writeCachedResponse(key, freshResponse, metric, period);
-        // 방금 계산한 결과를 호출자에게 반환합니다.
-        return new SensorTrendCacheLoadResult(freshResponse, SensorTrendCacheStatus.MISS);
+        return new SensorTrendCacheLoadResult(freshResponse, SensorTrendCacheStatus.MISS_TIMEOUT_FALLBACK);
     }
 
     // Redis JSON을 노드 센서 추이 응답으로 복원합니다.
@@ -142,6 +180,63 @@ public class AdminNodeSensorTrendCache {
         return Objects.requireNonNull(loader.get());
     }
 
+    // Redis SET NX EX 결과를 첫 요청·대기·장애 우회 상태로 구분합니다.
+    private LoadLockState tryAcquireLoadLock(String lockKey, String lockToken) {
+        try {
+            Boolean acquired = redisTemplate.opsForValue().setIfAbsent(
+                    lockKey,
+                    lockToken,
+                    Duration.ofSeconds(properties.getLoadLockTtlSeconds())
+            );
+            return Boolean.TRUE.equals(acquired) ? LoadLockState.ACQUIRED : LoadLockState.BUSY;
+        } catch (DataAccessException exception) {
+            log.warn("Redis 노드 센서 추이 잠금을 만들지 못했습니다. 직접 조회합니다. key={}", lockKey, exception);
+            return LoadLockState.UNAVAILABLE;
+        }
+    }
+
+    // 첫 요청이 저장한 응답을 최대 대기 시간까지 반복 확인하여 재사용합니다.
+    private Optional<AdminNodeSensorTrendResponse> waitForCachedResponse(
+            String key,
+            SensorTrendMetric metric,
+            AdminNodeCo2TrendPeriod period
+    ) {
+        long deadlineNanos = System.nanoTime() + Duration.ofMillis(properties.getLoadWaitMillis()).toNanos();
+
+        while (System.nanoTime() < deadlineNanos) {
+            if (!sleepBeforeRetry()) {
+                return Optional.empty();
+            }
+
+            Optional<AdminNodeSensorTrendResponse> cachedResponse = readCachedResponse(key, metric, period);
+            if (cachedResponse.isPresent()) {
+                return cachedResponse;
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    // 대기 중 인터럽트가 오면 상태를 복원하고 즉시 직접 조회 경로로 전환합니다.
+    private boolean sleepBeforeRetry() {
+        try {
+            Thread.sleep(properties.getLoadPollMillis());
+            return true;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    // Lua compare-and-delete로 현재 요청이 소유한 잠금만 해제합니다.
+    private void releaseLoadLock(String lockKey, String lockToken) {
+        try {
+            redisTemplate.execute(RELEASE_LOAD_LOCK_SCRIPT, List.of(lockKey), lockToken);
+        } catch (DataAccessException exception) {
+            log.warn("Redis 노드 센서 추이 잠금을 해제하지 못했습니다. TTL 만료를 기다립니다. key={}", lockKey, exception);
+        }
+    }
+
     // 노드·지표·기간을 모두 포함한 Redis 키를 생성합니다.
     private String buildKey(String nodeId, SensorTrendMetric metric, AdminNodeCo2TrendPeriod period) {
         // 예: airs:node:sensor-trend:v1:node:node_01:metric:temperature:period:1mo 형태를 사용합니다.
@@ -149,6 +244,11 @@ public class AdminNodeSensorTrendCache {
                 + ":node:" + nodeId
                 + ":metric:" + metric.getApiValue()
                 + ":period:" + period.getValue();
+    }
+
+    // 응답 캐시와 구분되는 같은 key 전용 조회 잠금 이름을 만듭니다.
+    private String buildLoadLockKey(String cacheKey) {
+        return cacheKey + ":load-lock";
     }
 
     // 잘못된 TTL이나 빈 Redis 키 접두사는 앱 기동 시점에 차단합니다.
@@ -161,5 +261,20 @@ public class AdminNodeSensorTrendCache {
         if (properties.getKeyPrefix() == null || properties.getKeyPrefix().isBlank()) {
             throw new IllegalStateException("node.sensor-trend.cache.key-prefix는 비어 있을 수 없습니다.");
         }
+        // lock TTL은 지연된 InfluxDB 조회가 끝나기 전 잠금이 풀리지 않도록 양수여야 합니다.
+        if (properties.getLoadLockTtlSeconds() <= 0) {
+            throw new IllegalStateException("node.sensor-trend.cache.load-lock-ttl-seconds는 0보다 커야 합니다.");
+        }
+        // 대기와 polling 값은 요청 thread를 무한정 점유하지 않도록 유효 범위를 확인합니다.
+        if (properties.getLoadWaitMillis() < 0 || properties.getLoadPollMillis() <= 0) {
+            throw new IllegalStateException("node.sensor-trend.cache load wait/poll 값이 올바르지 않습니다.");
+        }
+    }
+
+    // lock 획득 결과에 따라 중복 조회 방지와 장애 우회를 나눕니다.
+    private enum LoadLockState {
+        ACQUIRED,
+        BUSY,
+        UNAVAILABLE
     }
 }

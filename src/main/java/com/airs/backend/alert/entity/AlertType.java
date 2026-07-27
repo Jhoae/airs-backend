@@ -2,6 +2,8 @@ package com.airs.backend.alert.entity;
 
 public enum AlertType {
     VENTILATION_RECOMMENDED, // 환기 권장 알림
+    // 절대 CO2 초과 전의 빠른 상승을 감지하는 변화량 기반 알림이다.
+    CO2_RAPID_RISE,
     // 냉방 또는 난방 낭비가 의심될 때 사용하는 유형이다.
     HVAC_WASTE_SUSPECTED,
     // 노드 telemetry가 장시간 수신되지 않을 때 사용하는 유형이다.

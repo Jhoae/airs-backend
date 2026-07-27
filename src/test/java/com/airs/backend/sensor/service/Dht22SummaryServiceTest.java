@@ -23,26 +23,20 @@ import com.airs.backend.location.entity.Building;
 import com.airs.backend.location.entity.Campus;
 import com.airs.backend.location.entity.Space;
 import com.airs.backend.location.entity.SpaceType;
+import com.airs.backend.admin.service.AdminAccessService;
 import com.airs.backend.node.entity.AirsNode;
 import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.NodeInstallationRepository;
 import com.airs.backend.sensor.dto.DailyDht22SummaryResponse;
 import com.airs.backend.sensor.influx.InfluxDht22Reader;
-import com.airs.backend.user.entity.CampusAdmin;
-import com.airs.backend.user.entity.CampusAdminStatus;
 import com.airs.backend.user.entity.User;
 import com.airs.backend.user.entity.UserRole;
-import com.airs.backend.user.repository.CampusAdminRepository;
-import com.airs.backend.user.repository.UserRepository;
 
 @ExtendWith(MockitoExtension.class)
 class Dht22SummaryServiceTest {
 
     @Mock
-    private UserRepository userRepository;
-
-    @Mock
-    private CampusAdminRepository campusAdminRepository;
+    private AdminAccessService adminAccessService;
 
     @Mock
     private NodeInstallationRepository nodeInstallationRepository;
@@ -64,26 +58,26 @@ class Dht22SummaryServiceTest {
                 "node_01", date, 26.1, null, 23.4, 20.1, null, 61.0, null, 52.0, 40.0, null
         );
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(adminAccessService.getApprovedAdmin(1L)).thenReturn(user);
         when(nodeInstallationRepository.findByNode_IdAndActiveTrue("node_01")).thenReturn(Optional.of(installation));
-        when(campusAdminRepository.findByUser_Id(1L)).thenReturn(Optional.of(new CampusAdmin(campus, user, CampusAdminStatus.APPROVED)));
         when(influxDht22Reader.readDailySummary("node_01", date)).thenReturn(expected);
 
         DailyDht22SummaryResponse actual = dht22SummaryService.getDailySummary(1L, "node_01", date);
 
         assertEquals(expected, actual);
+        verify(adminAccessService).requireSameCampus(user, 10L, "해당 노드에 접근할 수 없습니다.");
         verify(influxDht22Reader).readDailySummary("node_01", date);
     }
 
     @Test
-    void getDailySummary_should_fail_when_device_is_not_owned_by_user() {
+    void getDailySummary_should_fail_before_reading_influx_when_admin_access_is_denied() {
         LocalDate date = LocalDate.parse("2026-05-06");
         Campus campus = campus(10L);
         User user = user(1L, campus, UserRole.USER);
-        NodeInstallation installation = installation("node_01", campus, user);
 
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(nodeInstallationRepository.findByNode_IdAndActiveTrue("node_01")).thenReturn(Optional.of(installation));
+        when(adminAccessService.getApprovedAdmin(1L)).thenThrow(
+                new ResponseStatusException(HttpStatus.FORBIDDEN, "관리자 권한이 필요합니다.")
+        );
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> dht22SummaryService.getDailySummary(1L, "node_01", date));

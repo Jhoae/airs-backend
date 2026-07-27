@@ -18,6 +18,7 @@ import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationT
 import com.airs.backend.ai.service.SpaceStatusEvaluationService.VentilationRecommendationLevel;
 import com.airs.backend.ai.service.SpaceStatusEvaluationService.VentilationResult;
 import com.airs.backend.ai.service.SpaceStatusEvaluationService.VentilationStatus;
+import com.airs.backend.alert.service.WeakWifiAlertService;
 import com.airs.backend.location.entity.Building;
 import com.airs.backend.location.entity.Campus;
 import com.airs.backend.location.entity.Space;
@@ -78,6 +79,9 @@ class Dht22SnapshotUpdateServiceTest {
 
     @Mock
     private SpaceStatusEvaluationService spaceStatusEvaluationService;
+
+    @Mock
+    private WeakWifiAlertService weakWifiAlertService;
 
     @InjectMocks
     private Dht22SnapshotUpdateService dht22SnapshotUpdateService;
@@ -303,6 +307,7 @@ class Dht22SnapshotUpdateServiceTest {
                         new ReportSummaryValues(
                                 comfortScore,
                                 842,
+                                null,
                                 co2Status,
                                 OccupancyState.PRESENT,
                                 false,

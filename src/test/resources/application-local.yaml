@@ -6,10 +6,10 @@ spring:
     password: test
   jpa:
     hibernate:
-      ddl-auto: create
+      ddl-auto: validate
     open-in-view: false
   flyway:
-    enabled: false
+    enabled: true
 
 mqtt:
   enabled: false

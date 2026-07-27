@@ -59,6 +59,8 @@ public class SpaceStatusEvaluationService {
                         comfort.score(),
                         // 예: 842ppm
                         current.co2Ppm(),
+                        // 예: 최근 10분 동안 +125ppm
+                        trend.co2Rate10m(),
                         // 예: NORMAL
                         ventilation.co2Status(),
                         // 예: PRESENT
@@ -729,6 +731,8 @@ public class SpaceStatusEvaluationService {
             int comfortScore,
             // 평가 시점 CO2 ppm
             Integer co2Ppm,
+            // 최근 10분 CO2 변화량(ppm)
+            Double co2Rate10m,
             // 평가 시점 CO2 상태
             Co2Status co2Status,
             // 평가 시점 재실 상태

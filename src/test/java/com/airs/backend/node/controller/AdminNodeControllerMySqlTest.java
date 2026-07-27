@@ -723,12 +723,21 @@ class AdminNodeControllerMySqlTest {
     }
 
     @Test
-    void cors_should_allow_cloudflare_pages_origin() throws Exception {
+    void cors_should_allow_any_web_origin_during_development() throws Exception {
         mockMvc.perform(options("/airs/auth/login")
-                        .header("Origin", "https://airs-430.pages.dev")
+                        .header("Origin", "https://airs.bibnear.cloud")
                         .header("Access-Control-Request-Method", "POST"))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Access-Control-Allow-Origin", "https://airs-430.pages.dev"));
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://airs.bibnear.cloud"));
+    }
+
+    @Test
+    void cors_should_allow_another_web_origin_during_development() throws Exception {
+        mockMvc.perform(options("/airs/auth/login")
+                        .header("Origin", "https://untrusted.example")
+                        .header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "https://untrusted.example"));
     }
 
     @Test

@@ -138,7 +138,7 @@ class SpaceEvaluationSnapshotWriterTest {
                         List.of("CO2_HIGH")
                 ),
                 new HvacWasteResult(false, HvacWasteSeverity.NONE, null, null, List.of()),
-                new ReportSummaryValues(score, 1128, co2Status, occupancyState, true, false)
+                new ReportSummaryValues(score, 1128, null, co2Status, occupancyState, true, false)
         );
     }
 

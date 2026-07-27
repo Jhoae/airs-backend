@@ -5,6 +5,7 @@ import com.airs.backend.ai.service.SpaceStatusEvaluationService;
 import com.airs.backend.ai.service.SpaceStatusEvaluationService.Co2Status;
 import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationPayload;
 import com.airs.backend.ai.service.SpaceStatusEvaluationService.SpaceEvaluationResult;
+import com.airs.backend.alert.service.WeakWifiAlertService;
 import com.airs.backend.node.entity.AirsNode;
 import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.NodeInstallationRepository;
@@ -49,6 +50,8 @@ public class Dht22SnapshotUpdateService {
     private final SpaceEvaluationPayloadAssembler spaceEvaluationPayloadAssembler;
     // 현재 센서값으로 comfort·CO2 상태를 평가합니다.
     private final SpaceStatusEvaluationService spaceStatusEvaluationService;
+    // 실제 Wi-Fi RSSI로 정보 알림 lifecycle을 갱신합니다.
+    private final WeakWifiAlertService weakWifiAlertService;
 
     // 재실 결과를 아직 계산하지 않은 호출의 최신 snapshot을 트랜잭션으로 갱신합니다.
     @Transactional
@@ -100,6 +103,8 @@ public class Dht22SnapshotUpdateService {
         LocalDateTime receivedAt = LocalDateTime.ofInstant(payload.getTimestamp(), SERVICE_ZONE);
         // 노드 연결·센서 상태 snapshot을 최신 telemetry로 갱신합니다.
         updateNodeStatus(installation.getNode(), payload, occupancy, receivedAt);
+        // telemetry가 실제로 보낸 Wi-Fi RSSI로 약함 정보 알림을 즉시 동기화합니다.
+        weakWifiAlertService.sync(installation, payload.getWifiSignalDbm(), receivedAt);
         // 연결된 공간의 환경·재실·AI 평가 snapshot을 최신 telemetry로 갱신합니다.
         updateSpaceStatus(installation, payload, occupancy, receivedAt);
     }

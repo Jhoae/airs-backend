@@ -32,6 +32,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -51,6 +52,9 @@ class SpaceEvaluationAlertServiceTest {
 
     @Mock
     private AlertRepository alertRepository;
+
+    @Spy
+    private Co2RapidRiseAlertPolicy co2RapidRiseAlertPolicy = new Co2RapidRiseAlertPolicy();
 
     @InjectMocks
     private SpaceEvaluationAlertService service;
@@ -74,6 +78,8 @@ class SpaceEvaluationAlertServiceTest {
         when(alertRepository.findByDedupKeyAndStatus("node_01:VENTILATION_RECOMMENDED", AlertStatus.ACTIVE))
                 .thenReturn(Optional.empty());
         when(alertRepository.findByDedupKeyAndStatus("node_01:HVAC_WASTE_SUSPECTED", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(alertRepository.findByDedupKeyAndStatus("node_01:CO2_RAPID_RISE", AlertStatus.ACTIVE))
                 .thenReturn(Optional.empty());
 
         service.syncAlerts(installation, result);
@@ -130,6 +136,8 @@ class SpaceEvaluationAlertServiceTest {
                 .thenReturn(Optional.empty());
         when(alertRepository.findByDedupKeyAndStatus("node_01:HVAC_WASTE_SUSPECTED", AlertStatus.ACTIVE))
                 .thenReturn(Optional.of(existingAlert));
+        when(alertRepository.findByDedupKeyAndStatus("node_01:CO2_RAPID_RISE", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
 
         service.syncAlerts(installation, result);
 
@@ -177,6 +185,8 @@ class SpaceEvaluationAlertServiceTest {
                 .thenReturn(Optional.of(existingAlert));
         when(alertRepository.findByDedupKeyAndStatus("node_01:HVAC_WASTE_SUSPECTED", AlertStatus.ACTIVE))
                 .thenReturn(Optional.empty());
+        when(alertRepository.findByDedupKeyAndStatus("node_01:CO2_RAPID_RISE", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
 
         service.syncAlerts(installation, result);
 
@@ -184,7 +194,154 @@ class SpaceEvaluationAlertServiceTest {
         assertEquals(LocalDateTime.parse("2026-07-09T10:30:00"), existingAlert.getResolvedAt());
     }
 
+    @Test
+    void syncAlerts_should_create_co2_rapid_rise_alert_when_co2_rises_100ppm_in_10_minutes_regardless_of_occupancy() {
+        NodeInstallation installation = installation();
+        SpaceEvaluationResult result = result(
+                new VentilationResult(
+                        VentilationStatus.RECOMMEND,
+                        Co2Status.NORMAL,
+                        VentilationRecommendationLevel.OBSERVE,
+                        false,
+                        "CO2가 상승하고 있습니다.",
+                        List.of("CO2_RISING")
+                ),
+                new HvacWasteResult(false, HvacWasteSeverity.NONE, null, null, List.of()),
+                925,
+                105.0,
+                OccupancyState.ABSENT
+        );
+        ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
+
+        when(alertRepository.findByDedupKeyAndStatus("node_01:VENTILATION_RECOMMENDED", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(alertRepository.findByDedupKeyAndStatus("node_01:CO2_RAPID_RISE", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(alertRepository.findByDedupKeyAndStatus("node_01:HVAC_WASTE_SUSPECTED", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        service.syncAlerts(installation, result);
+
+        verify(alertRepository).save(captor.capture());
+        Alert saved = captor.getValue();
+        assertEquals(AlertType.CO2_RAPID_RISE, saved.getAlertType());
+        assertEquals(AlertSeverity.WARNING, saved.getSeverity());
+        assertEquals("CO2 급상승 감지", saved.getTitle());
+        assertEquals("10분 동안 CO2가 105ppm 상승했습니다. 현재 925ppm이므로 환기를 권장합니다.", saved.getMessage());
+        assertEquals("co2_rate_10m", saved.getMetricName());
+        assertEquals(new BigDecimal("105.0"), saved.getMetricValue());
+        assertEquals("ppm/10min", saved.getMetricUnit());
+        assertEquals("node_01:CO2_RAPID_RISE", saved.getDedupKey());
+    }
+
+    @Test
+    void syncAlerts_should_resolve_co2_rapid_rise_alert_when_rate_is_50ppm_or_lower_in_10_minutes() {
+        NodeInstallation installation = installation();
+        Alert existingAlert = rapidRiseAlert(installation);
+        SpaceEvaluationResult result = result(
+                new VentilationResult(
+                        VentilationStatus.RECOMMEND,
+                        Co2Status.NORMAL,
+                        VentilationRecommendationLevel.OBSERVE,
+                        false,
+                        "CO2가 상승하고 있습니다.",
+                        List.of("CO2_RISING")
+                ),
+                new HvacWasteResult(false, HvacWasteSeverity.NONE, null, null, List.of()),
+                900,
+                50.0,
+                OccupancyState.PRESENT
+        );
+
+        when(alertRepository.findByDedupKeyAndStatus("node_01:VENTILATION_RECOMMENDED", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(alertRepository.findByDedupKeyAndStatus("node_01:CO2_RAPID_RISE", AlertStatus.ACTIVE))
+                .thenReturn(Optional.of(existingAlert));
+        when(alertRepository.findByDedupKeyAndStatus("node_01:HVAC_WASTE_SUSPECTED", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        service.syncAlerts(installation, result);
+
+        assertEquals(AlertStatus.RESOLVED, existingAlert.getStatus());
+        assertEquals(LocalDateTime.parse("2026-07-09T10:30:00"), existingAlert.getResolvedAt());
+    }
+
+    @Test
+    void syncAlerts_should_keep_active_co2_rapid_rise_alert_when_rate_remains_above_50ppm_in_10_minutes() {
+        NodeInstallation installation = installation();
+        Alert existingAlert = rapidRiseAlert(installation);
+        SpaceEvaluationResult result = result(
+                new VentilationResult(
+                        VentilationStatus.RECOMMEND,
+                        Co2Status.NORMAL,
+                        VentilationRecommendationLevel.OBSERVE,
+                        false,
+                        "CO2가 상승하고 있습니다.",
+                        List.of("CO2_RISING")
+                ),
+                new HvacWasteResult(false, HvacWasteSeverity.NONE, null, null, List.of()),
+                900,
+                51.0,
+                OccupancyState.PRESENT
+        );
+
+        when(alertRepository.findByDedupKeyAndStatus("node_01:VENTILATION_RECOMMENDED", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(alertRepository.findByDedupKeyAndStatus("node_01:CO2_RAPID_RISE", AlertStatus.ACTIVE))
+                .thenReturn(Optional.of(existingAlert));
+        when(alertRepository.findByDedupKeyAndStatus("node_01:HVAC_WASTE_SUSPECTED", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        service.syncAlerts(installation, result);
+
+        assertEquals(AlertStatus.ACTIVE, existingAlert.getStatus());
+        assertEquals(LocalDateTime.parse("2026-07-09T10:30:00"), existingAlert.getLastDetectedAt());
+        assertNull(existingAlert.getResolvedAt());
+    }
+
+    @Test
+    void syncAlerts_should_keep_active_co2_rapid_rise_alert_when_rate_evidence_is_missing() {
+        NodeInstallation installation = installation();
+        Alert existingAlert = rapidRiseAlert(installation);
+        SpaceEvaluationResult result = result(
+                new VentilationResult(
+                        VentilationStatus.RECOMMEND,
+                        Co2Status.NORMAL,
+                        VentilationRecommendationLevel.OBSERVE,
+                        false,
+                        "CO2가 상승하고 있습니다.",
+                        List.of("CO2_RISING")
+                ),
+                new HvacWasteResult(false, HvacWasteSeverity.NONE, null, null, List.of()),
+                900,
+                null,
+                OccupancyState.PRESENT
+        );
+
+        when(alertRepository.findByDedupKeyAndStatus("node_01:VENTILATION_RECOMMENDED", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(alertRepository.findByDedupKeyAndStatus("node_01:CO2_RAPID_RISE", AlertStatus.ACTIVE))
+                .thenReturn(Optional.of(existingAlert));
+        when(alertRepository.findByDedupKeyAndStatus("node_01:HVAC_WASTE_SUSPECTED", AlertStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        service.syncAlerts(installation, result);
+
+        assertEquals(AlertStatus.ACTIVE, existingAlert.getStatus());
+        assertNull(existingAlert.getResolvedAt());
+    }
+
     private SpaceEvaluationResult result(VentilationResult ventilation, HvacWasteResult hvacWaste) {
+        return result(ventilation, hvacWaste, 1128, null, OccupancyState.PRESENT);
+    }
+
+    private SpaceEvaluationResult result(
+            VentilationResult ventilation,
+            HvacWasteResult hvacWaste,
+            Integer co2Ppm,
+            Double co2Rate10m,
+            OccupancyState occupancyState
+    ) {
         return new SpaceEvaluationResult(
                 301L,
                 OffsetDateTime.parse("2026-07-09T10:30:00+09:00"),
@@ -197,8 +354,36 @@ class SpaceEvaluationAlertServiceTest {
                 ),
                 ventilation,
                 hvacWaste,
-                new ReportSummaryValues(74, 1128, ventilation.co2Status(), OccupancyState.PRESENT, ventilation.eventRequired(), hvacWaste.suspected())
+                new ReportSummaryValues(74, co2Ppm, co2Rate10m, ventilation.co2Status(), occupancyState, ventilation.eventRequired(), hvacWaste.suspected())
         );
+    }
+
+    private Alert rapidRiseAlert(NodeInstallation installation) {
+        Alert alert = new Alert(
+                installation.getSpace().getCampus(),
+                installation.getSpace(),
+                installation.getNode(),
+                AlertType.CO2_RAPID_RISE,
+                AlertSeverity.WARNING,
+                AlertAudience.ADMIN,
+                "CO2 급상승 감지",
+                "기존 메시지",
+                "co2_rate_10m",
+                BigDecimal.valueOf(100),
+                "ppm/10min",
+                "node_01:CO2_RAPID_RISE",
+                LocalDateTime.parse("2026-07-09T10:00:00")
+        );
+        alert.refresh(
+                AlertSeverity.WARNING,
+                "CO2 급상승 감지",
+                "기존 메시지",
+                "co2_rate_10m",
+                BigDecimal.valueOf(100),
+                "ppm/10min",
+                LocalDateTime.parse("2026-07-09T10:00:00")
+        );
+        return alert;
     }
 
     private NodeInstallation installation() {
