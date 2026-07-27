@@ -46,6 +46,12 @@ public class Dht22Payload {
     // Wi-Fi RSSI(dBm)를 읽는다.
     @JsonAlias("wifi_signal_dbm")
     private Integer wifiSignalDbm;
+    // 펌웨어 재부팅마다 바뀌는 발행 세션 식별자를 읽는다.
+    @JsonAlias("boot_id")
+    private String bootId;
+    // 같은 부팅 세션 안에서 증가하는 telemetry 순번을 읽는다.
+    @JsonAlias("sequence_no")
+    private Long sequenceNo;
     // MQTT에 시각이 없을 때 수신 서비스가 보정한 원본 시각이다.
     private Instant timestamp;
 

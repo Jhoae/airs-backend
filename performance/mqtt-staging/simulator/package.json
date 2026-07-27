@@ -1,0 +1,8 @@
+{
+  "name": "airs-mqtt-staging-simulator",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "mqtt": "5.10.4"
+  }
+}

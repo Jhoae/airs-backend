@@ -8,12 +8,15 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -36,8 +39,16 @@ class Dht22IngestionServiceTest {
     @Mock
     private OccupancyFusionService occupancyFusionService;
 
+    @Mock
+    private TelemetryDeliveryGuard telemetryDeliveryGuard;
+
     @InjectMocks
     private Dht22IngestionService dht22IngestionService;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(telemetryDeliveryGuard.evaluate(any(), any())).thenReturn(TelemetryDeliveryDecision.LEGACY_BYPASS);
+    }
 
     @Test
     void ingest_should_fill_server_time_when_timestamp_is_missing() {
@@ -125,5 +136,18 @@ class Dht22IngestionServiceTest {
                 () -> dht22IngestionService.ingest("node_01", payload));
 
         verifyNoInteractions(influxDht22Writer, dht22SnapshotUpdateService);
+    }
+
+    @Test
+    void ingest_should_skip_snapshot_and_raw_write_for_duplicate_telemetry() {
+        Dht22Payload payload = new Dht22Payload(26.5, 50.3, Instant.parse("2026-07-28T10:00:00Z"));
+        payload.setBootId("boot-node-01");
+        payload.setSequenceNo(42L);
+        when(telemetryDeliveryGuard.evaluate("node_01", payload)).thenReturn(TelemetryDeliveryDecision.DUPLICATE);
+
+        dht22IngestionService.ingest("node_01", payload);
+
+        verify(telemetryDeliveryGuard).evaluate("node_01", payload);
+        verifyNoInteractions(occupancyFusionService, dht22SnapshotUpdateService, influxDht22Writer);
     }
 }

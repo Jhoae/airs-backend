@@ -19,14 +19,14 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.airs.backend.sensor.config.MqttProperties;
 import com.airs.backend.sensor.dto.Dht22Payload;
-import com.airs.backend.sensor.service.Dht22IngestionService;
+import com.airs.backend.sensor.service.TelemetryIngestionDispatcher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class MqttDht22SubscriberTest {
 
     @Mock
-    private Dht22IngestionService dht22IngestionService;
+    private TelemetryIngestionDispatcher telemetryIngestionDispatcher;
 
     private MqttDht22Subscriber mqttDht22Subscriber;
 
@@ -40,7 +40,7 @@ class MqttDht22SubscriberTest {
         mqttDht22Subscriber = new MqttDht22Subscriber(
                 mqttProperties,
                 new ObjectMapper().findAndRegisterModules(),
-                dht22IngestionService
+                telemetryIngestionDispatcher
         );
     }
 
@@ -51,6 +51,8 @@ class MqttDht22SubscriberTest {
                   "temperature_c": 26.5,
                   "humidity_pct": 50.3,
                   "co2_ppm": 842,
+                  "boot_id": "boot-node-01",
+                  "sequence_no": 42,
                   "timestamp": "2026-04-10T10:00:00Z"
                 }
                 """;
@@ -64,12 +66,14 @@ class MqttDht22SubscriberTest {
         );
 
         ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(dht22IngestionService).ingest(eq("node_01"), payloadCaptor.capture());
+        verify(telemetryIngestionDispatcher).dispatch(eq("node_01"), payloadCaptor.capture());
 
         Dht22Payload payload = payloadCaptor.getValue();
         assertEquals(26.5, payload.getTemperature());
         assertEquals(50.3, payload.getHumidity());
         assertEquals(842, payload.getCo2Ppm());
+        assertEquals("boot-node-01", payload.getBootId());
+        assertEquals(42L, payload.getSequenceNo());
         assertEquals(Instant.parse("2026-04-10T10:00:00Z"), payload.getTimestamp());
     }
 
@@ -93,7 +97,7 @@ class MqttDht22SubscriberTest {
         );
 
         ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(dht22IngestionService).ingest(eq("node_01"), payloadCaptor.capture());
+        verify(telemetryIngestionDispatcher).dispatch(eq("node_01"), payloadCaptor.capture());
 
         Dht22Payload payload = payloadCaptor.getValue();
         assertEquals(26.5, payload.getTemperature());
@@ -130,7 +134,7 @@ class MqttDht22SubscriberTest {
         );
 
         ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(dht22IngestionService).ingest(eq("node_01"), payloadCaptor.capture());
+        verify(telemetryIngestionDispatcher).dispatch(eq("node_01"), payloadCaptor.capture());
 
         Dht22Payload payload = payloadCaptor.getValue();
         assertEquals(21.1, payload.getTemperature());

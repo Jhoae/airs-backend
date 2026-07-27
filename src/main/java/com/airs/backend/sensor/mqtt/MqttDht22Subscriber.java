@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 
 import com.airs.backend.sensor.config.MqttProperties;
 import com.airs.backend.sensor.dto.Dht22Payload;
-import com.airs.backend.sensor.service.Dht22IngestionService;
+import com.airs.backend.sensor.service.TelemetryIngestionDispatcher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.annotation.PreDestroy;
@@ -36,8 +36,8 @@ public class MqttDht22Subscriber {
     private final MqttProperties mqttProperties;
     // JSON telemetry를 DTO로 역직렬화합니다.
     private final ObjectMapper objectMapper;
-    // 수신한 telemetry의 MySQL·InfluxDB 적재를 담당합니다.
-    private final Dht22IngestionService dht22IngestionService;
+    // 노드별 순서를 보존하며 telemetry 적재 작업을 분배합니다.
+    private final TelemetryIngestionDispatcher telemetryIngestionDispatcher;
 
     // 종료 시 연결을 해제하기 위해 MQTT 클라이언트를 보관합니다.
     private MqttClient mqttClient;
@@ -90,8 +90,8 @@ public class MqttDht22Subscriber {
 
         // JSON 필드 별칭을 반영해 센서 telemetry DTO를 생성합니다.
         Dht22Payload payload = objectMapper.readValue(payloadJson, Dht22Payload.class);
-        // 하나의 telemetry를 MySQL 최신 상태와 InfluxDB raw 데이터로 적재합니다.
-        dht22IngestionService.ingest(nodeId, payload);
+        // MQTT callback은 빠르게 반환하고 실제 적재는 노드별 순서 보존 작업자에게 맡깁니다.
+        telemetryIngestionDispatcher.dispatch(nodeId, payload);
     }
 
     // 허용된 telemetry topic에서 node ID를 안전하게 분리합니다.

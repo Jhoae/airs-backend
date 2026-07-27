@@ -25,6 +25,8 @@ public class Dht22IngestionService {
     private final Dht22SnapshotUpdateService dht22SnapshotUpdateService;
     // PIR·mmWave 이력으로 이번 telemetry의 재실 상태를 계산한다.
     private final OccupancyFusionService occupancyFusionService;
+    // QoS 1 재전달과 순서 역전 telemetry를 재실 계산 전에 차단한다.
+    private final TelemetryDeliveryGuard telemetryDeliveryGuard;
 
     // 구독한 한 건의 telemetry를 검증하고 두 저장소에 독립적으로 반영한다.
     public void ingest(String nodeId, Dht22Payload payload) {
@@ -73,6 +75,14 @@ public class Dht22IngestionService {
         // CO2가 제공된 경우에만 음수 여부를 검증한다.
         if (payload.getCo2Ppm() != null && payload.getCo2Ppm() < 0) {
             throw new IllegalArgumentException("co2 값 범위가 올바르지 않습니다.");
+        }
+
+        // 중복·순서 역전 메시지는 재실 이력과 최신 snapshot을 바꾸기 전에 반환한다.
+        TelemetryDeliveryDecision deliveryDecision = telemetryDeliveryGuard.evaluate(nodeId, payload);
+        if (!deliveryDecision.shouldIngest()) {
+            log.debug("중복 또는 순서 역전 telemetry를 저장 전에 건너뜁니다. nodeId={}, decision={}, bootId={}, sequenceNo={}",
+                    nodeId, deliveryDecision, payload.getBootId(), payload.getSequenceNo());
+            return;
         }
 
         // 재실 판정은 telemetry 한 건당 한 번만 수행해 두 저장소에 같은 결과를 쓴다.

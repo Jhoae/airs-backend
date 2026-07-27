@@ -22,7 +22,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -210,6 +212,31 @@ class AdminNodeSensorTrendCacheTest {
         assertEquals(0, followerLoadCount.get());
     }
 
+    @Test
+    void getOrLoad_should_renew_leader_lock_while_loader_is_slower_than_renew_interval() throws Exception {
+        NodeSensorTrendCacheProperties properties = defaultProperties();
+        properties.setLoadLockTtlSeconds(1);
+        properties.setLoadLockRenewIntervalMillis(100);
+        when(redisTemplate.execute(any(), anyList(), any(), any())).thenReturn(1L);
+
+        AdminNodeSensorTrendCache cache = new AdminNodeSensorTrendCache(redisTemplate, objectMapper(), properties, metrics());
+        AtomicInteger loadCount = new AtomicInteger();
+
+        SensorTrendCacheLoadResult result = cache.getOrLoad(
+                "node_01",
+                SensorTrendMetric.TEMPERATURE,
+                AdminNodeCo2TrendPeriod.ONE_MONTH,
+                () -> {
+                    sleep(1_200);
+                    return loadTrend(loadCount, "temperature", "1mo");
+                }
+        );
+
+        assertEquals(SensorTrendCacheStatus.MISS, result.cacheStatus());
+        assertEquals(1, loadCount.get());
+        verify(redisTemplate, atLeast(2)).execute(any(), anyList(), any(), any());
+    }
+
     private NodeSensorTrendCacheProperties defaultProperties() {
         NodeSensorTrendCacheProperties properties = new NodeSensorTrendCacheProperties();
         properties.setEnabled(true);
@@ -217,6 +244,7 @@ class AdminNodeSensorTrendCacheTest {
         properties.setStaleTtlSeconds(60);
         properties.setKeyPrefix("airs:test:node:sensor-trend:v1");
         properties.setLoadLockTtlSeconds(10);
+        properties.setLoadLockRenewIntervalMillis(2500);
         properties.setLoadWaitMillis(1000);
         properties.setLoadPollMillis(1);
         return properties;
@@ -256,5 +284,14 @@ class AdminNodeSensorTrendCacheTest {
                 "1h",
                 List.of(new AdminNodeSensorTrendPointResponse(from, 24.3))
         );
+    }
+
+    private void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("테스트 대기 중 인터럽트가 발생했습니다.", exception);
+        }
     }
 }

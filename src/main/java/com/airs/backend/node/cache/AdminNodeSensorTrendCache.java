@@ -19,6 +19,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 // 노드 상세에서 같은 센서·기간을 다시 선택했을 때 InfluxDB 조회를 줄입니다.
@@ -31,6 +35,17 @@ public class AdminNodeSensorTrendCache {
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
             Long.class
     );
+    // 긴 InfluxDB 조회 중에도 leader lock을 같은 token으로 연장한다.
+    private static final DefaultRedisScript<Long> RENEW_LOAD_LOCK_SCRIPT = new DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end",
+            Long.class
+    );
+    // 요청마다 새 thread를 만들지 않도록 daemon scheduler 하나를 공유한다.
+    private static final ScheduledExecutorService LOAD_LOCK_RENEW_EXECUTOR = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "node-sensor-trend-lock-renewal");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     // Redis 문자열 키·값 연산을 수행합니다.
     private final StringRedisTemplate redisTemplate;
@@ -88,6 +103,8 @@ public class AdminNodeSensorTrendCache {
 
         // 잠금을 얻은 첫 요청은 다른 요청이 방금 결과를 채웠는지 한 번 더 확인합니다.
         if (loadLockState == LoadLockState.ACQUIRED) {
+            // 조회가 lock TTL보다 길어져도 다른 요청이 새 leader가 되지 않게 연장을 시작한다.
+            ScheduledFuture<?> lockRenewal = startLoadLockRenewal(lockKey, lockToken);
             try {
                 Optional<CachedResponse> refreshedResponse = readCachedResponse(key, metric, period);
                 if (refreshedResponse.filter(CachedResponse::fresh).isPresent()) {
@@ -99,6 +116,8 @@ public class AdminNodeSensorTrendCache {
                 writeCachedResponse(key, freshResponse, metric, period);
                 return new SensorTrendCacheLoadResult(freshResponse, SensorTrendCacheStatus.MISS);
             } finally {
+                // 요청이 끝나면 더 이상 필요 없는 lock 연장을 먼저 중단한다.
+                lockRenewal.cancel(false);
                 // token이 일치할 때만 잠금을 해제해 늦게 끝난 요청이 다른 leader를 지우지 못하게 합니다.
                 releaseLoadLock(lockKey, lockToken);
             }
@@ -208,6 +227,32 @@ public class AdminNodeSensorTrendCache {
         }
     }
 
+    // leader가 긴 조회 중인 동안 같은 token을 가진 경우에만 Redis lock TTL을 연장한다.
+    private ScheduledFuture<?> startLoadLockRenewal(String lockKey, String lockToken) {
+        long renewIntervalMillis = properties.getLoadLockRenewIntervalMillis();
+        return LOAD_LOCK_RENEW_EXECUTOR.scheduleAtFixedRate(
+                () -> renewLoadLock(lockKey, lockToken),
+                renewIntervalMillis,
+                renewIntervalMillis,
+                TimeUnit.MILLISECONDS
+        );
+    }
+
+    // 다른 leader의 lock을 연장하지 않도록 token 비교와 EXPIRE를 Lua 한 번으로 수행한다.
+    private void renewLoadLock(String lockKey, String lockToken) {
+        try {
+            redisTemplate.execute(
+                    RENEW_LOAD_LOCK_SCRIPT,
+                    List.of(lockKey),
+                    lockToken,
+                    Long.toString(properties.getLoadLockTtlSeconds())
+            );
+        } catch (DataAccessException exception) {
+            // Redis 일시 장애는 응답 실패로 바꾸지 않고 기존 fallback 정책에 맡긴다.
+            log.warn("Redis 노드 센서 추이 잠금을 연장하지 못했습니다. key={}", lockKey, exception);
+        }
+    }
+
     // 첫 요청이 저장한 응답을 최대 대기 시간까지 반복 확인하여 재사용합니다.
     private Optional<CachedResponse> waitForCachedResponse(
             String key,
@@ -281,6 +326,11 @@ public class AdminNodeSensorTrendCache {
         // lock TTL은 지연된 InfluxDB 조회가 끝나기 전 잠금이 풀리지 않도록 양수여야 합니다.
         if (properties.getLoadLockTtlSeconds() <= 0) {
             throw new IllegalStateException("node.sensor-trend.cache.load-lock-ttl-seconds는 0보다 커야 합니다.");
+        }
+        // lock 연장 주기는 TTL보다 짧아야 leader가 만료 전 연장을 시도할 수 있다.
+        if (properties.getLoadLockRenewIntervalMillis() <= 0
+                || properties.getLoadLockRenewIntervalMillis() >= Duration.ofSeconds(properties.getLoadLockTtlSeconds()).toMillis()) {
+            throw new IllegalStateException("node.sensor-trend.cache.load-lock-renew-interval-millis는 lock TTL보다 짧아야 합니다.");
         }
         // 대기와 polling 값은 요청 thread를 무한정 점유하지 않도록 유효 범위를 확인합니다.
         if (properties.getLoadWaitMillis() < 0 || properties.getLoadPollMillis() <= 0) {

@@ -6,9 +6,12 @@ import org.springframework.stereotype.Component;
 
 import com.influxdb.client.InfluxDBClient;
 import com.influxdb.client.InfluxDBClientFactory;
-import com.influxdb.client.WriteApiBlocking;
+import com.influxdb.client.WriteApi;
+import com.influxdb.client.WriteOptions;
 import com.influxdb.client.domain.WritePrecision;
 import com.influxdb.client.write.Point;
+import com.influxdb.client.write.events.BackpressureEvent;
+import com.influxdb.client.write.events.WriteErrorEvent;
 import com.airs.backend.sensor.config.InfluxProperties;
 import com.airs.backend.sensor.config.OccupancyProperties;
 import com.airs.backend.sensor.dto.Dht22Payload;
@@ -36,8 +39,8 @@ public class InfluxDht22Writer {
     private final OccupancyProperties occupancyProperties;
     // PIR·mmWave를 재실 상태로 융합하는 서비스를 사용합니다.
     private final OccupancyFusionService occupancyFusionService;
-    // 동기 방식으로 Point를 기록하는 InfluxDB write API입니다.
-    private WriteApiBlocking writeApi;
+    // 여러 Point를 짧게 모아 비동기로 전송하는 InfluxDB write API입니다.
+    private WriteApi writeApi;
     // 애플리케이션 생명주기 동안 유지할 InfluxDB 연결입니다.
     private InfluxDBClient influxDBClient;
 
@@ -55,8 +58,25 @@ public class InfluxDht22Writer {
                 influxProperties.getBucket()
         );
 
-        // telemetry 유실을 즉시 감지할 수 있도록 동기 write API를 가져옵니다.
-        this.writeApi = influxDBClient.getWriteApiBlocking();
+        // MQTT 수신 스레드를 막지 않도록 Point를 배치로 전송할 쓰기 옵션을 만듭니다.
+        WriteOptions writeOptions = WriteOptions.builder()
+                // 짧은 burst를 하나의 HTTP 요청으로 합칠 최대 Point 수를 설정합니다.
+                .batchSize(influxProperties.getWriteBatchSize())
+                // batch가 덜 차도 이 시간 안에는 InfluxDB로 전송합니다.
+                .flushInterval(influxProperties.getWriteFlushIntervalMillis())
+                // InfluxDB 일시 지연 동안 메모리에 보관할 최대 Point 수를 설정합니다.
+                .bufferLimit(influxProperties.getWriteBufferLimit())
+                // 설정한 배치 쓰기 정책을 완성합니다.
+                .build();
+
+        // 비동기 batch write API를 생성해 telemetry 콜백의 동기 HTTP 대기를 제거합니다.
+        this.writeApi = influxDBClient.makeWriteApi(writeOptions);
+        // 비동기 전송 실패는 호출자에게 전파되지 않으므로 원인을 반드시 운영 로그에 남깁니다.
+        this.writeApi.listenEvents(WriteErrorEvent.class,
+                event -> log.warn("InfluxDB 비동기 batch 저장에 실패했습니다. error={}", event.getThrowable().getMessage(), event.getThrowable()));
+        // 메모리 버퍼가 넘치면 데이터 유실 위험이 있으므로 즉시 경고를 남깁니다.
+        this.writeApi.listenEvents(BackpressureEvent.class,
+                event -> log.warn("InfluxDB 비동기 batch 버퍼 압력이 발생했습니다. reason={}", event.getReason()));
     }
 
     // 재실 결과가 없는 호출에서는 현재 telemetry로 재실 상태를 먼저 계산합니다.
@@ -119,7 +139,7 @@ public class InfluxDht22Writer {
             addOccupancyFields(point, payload, occupancy);
         }
 
-        // 완성된 Point를 기본 raw bucket에 동기 저장합니다.
+        // 완성된 Point를 기본 raw bucket의 비동기 batch 대기열에 넣습니다.
         writeApi.writePoint(point);
         // 운영 로그에서 저장한 node ID를 추적할 수 있게 남깁니다.
         log.debug("InfluxDB에 센서 데이터를 저장했습니다. nodeId={}", nodeId);
@@ -153,7 +173,7 @@ public class InfluxDht22Writer {
                 .addField("comfort_score", comfortScore)
                 .time(evaluatedAt, WritePrecision.MS);
 
-        // MySQL 최신 snapshot과 별도로 그래프에 쓸 사실 기반 이력을 저장합니다.
+        // MySQL 최신 snapshot과 별도로 그래프에 쓸 사실 기반 이력을 비동기 대기열에 넣습니다.
         writeApi.writePoint(point);
         // 운영 중 점수 이력 적재 여부를 node ID와 함께 추적합니다.
         log.debug("InfluxDB에 Comfort Score를 저장했습니다. nodeId={}, comfortScore={}", nodeId, comfortScore);
@@ -231,9 +251,13 @@ public class InfluxDht22Writer {
         return value == null || value.isBlank();
     }
 
-    // Spring 종료 전에 InfluxDB 연결 자원을 닫습니다.
+    // Spring 종료 전에 비동기 버퍼와 InfluxDB 연결 자원을 닫습니다.
     @PreDestroy
     public void close() {
+        // 메모리에 남은 Point를 전송하고 비동기 write API를 닫습니다.
+        if (writeApi != null) {
+            writeApi.close();
+        }
         // 초기화된 클라이언트가 있을 때만 안전하게 연결을 종료합니다.
         if (influxDBClient != null) {
             influxDBClient.close();
