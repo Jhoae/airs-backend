@@ -9,27 +9,27 @@
 ## 기술스택
 
 <p>
-  <img src="https://img.shields.io/badge/-Java_21-orange"/>&nbsp;
-  <img src="https://img.shields.io/badge/-Spring_Boot-6DB33F"/>&nbsp;
-  <img src="https://img.shields.io/badge/-Spring_Security-2E8B57"/>&nbsp;
-  <img src="https://img.shields.io/badge/-Spring_Data_JPA-59666C"/>&nbsp;
-  <img src="https://img.shields.io/badge/-JWT-000000"/>&nbsp;
-  <img src="https://img.shields.io/badge/-MySQL-4479A1"/>&nbsp;
-  <img src="https://img.shields.io/badge/-InfluxDB-22ADF6"/>&nbsp;
-  <img src="https://img.shields.io/badge/-MQTT-660066"/>&nbsp;
+  <img alt="Java 21" src="https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white"/>&nbsp;
+  <img alt="Spring Boot 3.5.13" src="https://img.shields.io/badge/Spring_Boot-3.5.13-6DB33F?logo=springboot&logoColor=white"/>&nbsp;
+  <img alt="Spring Security" src="https://img.shields.io/badge/Spring_Security-6DB33F?logo=springsecurity&logoColor=white"/>&nbsp;
+  <img alt="Spring Data JPA" src="https://img.shields.io/badge/Spring_Data_JPA-59666C"/>&nbsp;
+  <img alt="JWT" src="https://img.shields.io/badge/JWT-000000?logo=jsonwebtokens&logoColor=white"/>&nbsp;
+  <img alt="MySQL" src="https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=white"/>&nbsp;
+  <img alt="InfluxDB" src="https://img.shields.io/badge/InfluxDB-22ADF6?logo=influxdb&logoColor=white"/>&nbsp;
+  <img alt="Redis" src="https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white"/>&nbsp;
+  <img alt="MQTT" src="https://img.shields.io/badge/MQTT-660066?logo=mqtt&logoColor=white"/>&nbsp;
+  <img alt="Flyway" src="https://img.shields.io/badge/Flyway-CC0200?logo=flyway&logoColor=white"/>&nbsp;
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white"/>&nbsp;
+  <img alt="Testcontainers" src="https://img.shields.io/badge/Testcontainers-3E86A0"/>&nbsp;
 </p>
 
-## 개발환경
+## 개발·실행 환경
 
-- backend
-  - Java 21
-  - Gradle
-  - Spring Boot 3.5.13
-- database
-  - MySQL
-  - InfluxDB
-- messaging
-  - MQTT Broker
+| 구분 | 환경 |
+|---|---|
+| Application | Java 21 · Spring Boot 3.5.13 · Gradle Wrapper |
+| Data & Messaging | MySQL 8.4 · InfluxDB 2.7 · Redis 7.4 · Mosquitto 2 |
+| Deployment | Docker Compose · Caddy 2.8 · GitHub Actions |
 
 ## 시스템 구성도
 
@@ -41,54 +41,13 @@
 
 ## Usage
 
-
-Docker Compose는 다음 서비스를 함께 실행합니다.
-
-- MySQL
-- InfluxDB
-- MQTT Broker
-
-따라서 Docker Compose 실행 전 `.env` 값을 실행 환경에 맞게 준비해야 합니다.
-
-필수로 확인할 값:
-
-- `AIRS_MYSQL_DATABASE`
-- `AIRS_MYSQL_USER`
-- `AIRS_MYSQL_PASSWORD`
-- `AIRS_MYSQL_ROOT_PASSWORD`
-- `AIRS_DDL_AUTO`
-- `AIRS_JWT_SECRET_KEY`
-- `AIRS_JWT_ACCESS_TOKEN_EXPIRATION_MINUTES`
-- `AIRS_INFLUX_USERNAME`
-- `AIRS_INFLUX_PASSWORD`
-- `AIRS_INFLUX_TOKEN`
-- `AIRS_INFLUX_ORG`
-- `AIRS_INFLUX_BUCKET`
-- `AIRS_INFLUX_MEASUREMENT`
-- `AIRS_INFLUX_NODE_ID_TAG`
-- `AIRS_MQTT_TOPIC`
-- `AIRS_JAVA_TOOL_OPTIONS`
-
-예시 `.env`는 `.env.example`을 참고합니다.
-실제 값은 `.env`에만 작성하고, `.env`는 GitHub에 올리지 않습니다.
-
-
-### Docker / Compose 실행
-
-1. 라즈베리파이에 실제 `.env` 파일 준비
-
 ```sh
 cp .env.example .env
-```
-
-2. `.env`의 예시값을 실제 값으로 수정
-
-```text
-AIRS_INFLUX_TOKEN, DB 비밀번호, JWT secret 등은 실제 운영 값으로 변경합니다.
-```
-
-3. compose로 전체 서비스 실행
-
-```sh
+# .env의 DB 비밀번호, InfluxDB token, JWT secret을 변경합니다.
 docker compose up -d --build
+curl http://localhost:8080/actuator/health
+
+./gradlew test
+
+docker compose down
 ```
