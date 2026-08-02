@@ -24,6 +24,7 @@ public class UserService {
     public UserMeResponse getMyInfo(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."));
+        AdminApprovalInfo adminApprovalInfo = resolveAdminApprovalInfo(user);
 
         return new UserMeResponse(
                 user.getUserId(),
@@ -32,34 +33,28 @@ public class UserService {
                 user.getNickname(),
                 user.getPhone(),
                 user.getRole(),
-                getAdminApproved(user),
-                getAdminApprovalStatus(user),
+                adminApprovalInfo.approved(),
+                adminApprovalInfo.status(),
                 user.getCreatedAt()
         );
     }
 
-    private Boolean getAdminApproved(User user) {
+    private AdminApprovalInfo resolveAdminApprovalInfo(User user) {
         if (user.getRole() == UserRole.USER) {
-            return null;
+            return new AdminApprovalInfo(null, AdminApprovalStatus.NOT_APPLICABLE);
         }
         if (user.getRole() == UserRole.ROOT_ADMIN) {
-            return true;
+            return new AdminApprovalInfo(true, AdminApprovalStatus.APPROVED);
         }
+
         return campusAdminRepository.findByUser_Id(user.getUserId())
-                .map(CampusAdmin::isApproved)
-                .orElse(false);
+                .map(campusAdmin -> new AdminApprovalInfo(
+                        campusAdmin.isApproved(),
+                        AdminApprovalStatus.from(campusAdmin.getStatus())
+                ))
+                .orElseGet(() -> new AdminApprovalInfo(false, AdminApprovalStatus.PENDING));
     }
 
-    private AdminApprovalStatus getAdminApprovalStatus(User user) {
-        if (user.getRole() == UserRole.USER) {
-            return AdminApprovalStatus.NOT_APPLICABLE;
-        }
-        if (user.getRole() == UserRole.ROOT_ADMIN) {
-            return AdminApprovalStatus.APPROVED;
-        }
-        return campusAdminRepository.findByUser_Id(user.getUserId())
-                .map(CampusAdmin::getStatus)
-                .map(AdminApprovalStatus::from)
-                .orElse(AdminApprovalStatus.PENDING);
+    private record AdminApprovalInfo(Boolean approved, AdminApprovalStatus status) {
     }
 }
