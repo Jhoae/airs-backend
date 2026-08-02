@@ -43,6 +43,8 @@ src/test/resources/application.properties
 
 *.log
 docs/troubleshooting/
+# 포트폴리오 원고와 원본 UI 캡처는 공개 backend 저장소 밖에서 관리합니다.
+docs/portfolio/
 
 # k6의 원본 결과에는 운영 응답·실행 환경 정보가 담길 수 있으므로 Git에 올리지 않습니다.
 performance/k6/results/*

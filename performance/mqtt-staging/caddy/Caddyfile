@@ -1,0 +1,8 @@
+:8080 {
+    reverse_proxy backend:8080
+
+    log {
+        output stdout
+        format json
+    }
+}

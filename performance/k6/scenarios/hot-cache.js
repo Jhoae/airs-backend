@@ -7,21 +7,20 @@ import {
   readSafeRate,
 } from '../lib/config.js';
 import { login } from '../lib/auth.js';
-import { requestMixedRead } from '../lib/endpoints.js';
+import { requestNamedEndpoint } from '../lib/endpoints.js';
 import { writeSanitizedSummary } from '../lib/summary.js';
 
-// 환경별 상한 안에서 혼합 읽기의 iteration 시작률을 제어합니다.
-const targetRate = readSafeRate('AIRS_TARGET_RPS', 5, profileLimit('rps'));
-// 짧은 실험부터 재현할 수 있도록 기본 지속 시간을 3분으로 둡니다.
-const duration = __ENV.AIRS_TEST_DURATION || '3m';
+const targetRate = readSafeRate('AIRS_TARGET_RPS', 20, profileLimit('rps'));
+const duration = __ENV.AIRS_TEST_DURATION || '30s';
+const endpointName = __ENV.AIRS_LOADTEST_ENDPOINT || 'sensor-temperature-1mo';
 const preAllocatedVUs = readPositiveInteger(
   'AIRS_PREALLOCATED_VUS',
-  Math.max(10, Math.ceil(targetRate * 0.5)),
+  Math.max(20, Math.ceil(targetRate * 0.5)),
   profileLimit('generator-vus')
 );
 const maxVUs = readPositiveInteger(
   'AIRS_MAX_VUS',
-  Math.max(50, targetRate),
+  Math.max(100, targetRate),
   profileLimit('generator-vus')
 );
 
@@ -29,10 +28,9 @@ if (maxVUs < preAllocatedVUs) {
   throw new Error('AIRS_MAX_VUS는 AIRS_PREALLOCATED_VUS 이상이어야 합니다.');
 }
 
-// arrival-rate 기준으로 endpoint 혼합 비율의 총 요청량을 제어합니다.
 export const options = {
   scenarios: {
-    mixedRead: {
+    hotCache: {
       executor: 'constant-arrival-rate',
       rate: targetRate,
       timeUnit: '1s',
@@ -45,28 +43,28 @@ export const options = {
   summaryTrendStats: SUMMARY_TREND_STATS,
 };
 
-// 자격 증명은 Git이 아닌 실행 환경에서만 읽습니다.
 const config = loadTestConfig();
 
-// setup 로그인으로 JWT를 한 번만 만들고 인증 부하를 섞지 않습니다.
+// 로그인 뒤 대상 endpoint를 한 번 호출해 workload 시작 전에 fresh cache를 준비합니다.
 export function setup() {
-  // access token을 발급받습니다.
   const token = login(config);
-  // VU에 필요한 공개 설정과 token을 반환합니다.
-  return {
+  const runtime = {
     token,
     baseUrl: config.baseUrl,
     nodeId: config.nodeId,
     analyticsDate: config.analyticsDate,
-    includeAlertDashboard: config.includeAlertDashboard,
-    includeCo2Trend: config.includeCo2Trend,
   };
+
+  const warmed = requestNamedEndpoint(runtime, endpointName);
+  if (!warmed.ok) {
+    throw new Error(`hot cache warm-up failed: ${endpointName} status=${warmed.status}`);
+  }
+
+  return runtime;
 }
 
-// 각 iteration은 미리 정한 비율 중 하나의 읽기 API만 호출합니다.
 export default function (runtime) {
-  // 쓰기 요청 없이 UI 화면 전환에 가까운 요청 분포를 만듭니다.
-  requestMixedRead(runtime);
+  requestNamedEndpoint(runtime, endpointName);
 }
 
 export function handleSummary(data) {
