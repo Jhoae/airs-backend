@@ -9,6 +9,7 @@ import com.airs.backend.alert.service.WeakWifiAlertService;
 import com.airs.backend.node.entity.AirsNode;
 import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.NodeInstallationRepository;
+import com.airs.backend.location.repository.SpaceRepository;
 import com.airs.backend.sensor.dto.Dht22Payload;
 import com.airs.backend.status.entity.ConnectionStatus;
 import com.airs.backend.status.entity.NodeStatusSnapshot;
@@ -44,28 +45,14 @@ public class Dht22SnapshotUpdateService {
     private final NodeStatusSnapshotRepository nodeStatusSnapshotRepository;
     // 공간별 환경·재실·AI 평가 최신 상태를 저장합니다.
     private final SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
-    // 센서 움직임을 재실 상태로 융합합니다.
-    private final OccupancyFusionService occupancyFusionService;
+    // 서로 다른 노드가 같은 공간 snapshot을 갱신할 때 항상 존재하는 space row를 직렬화 기준으로 사용합니다.
+    private final SpaceRepository spaceRepository;
     // telemetry를 공간 상태 평가 입력값으로 조립합니다.
     private final SpaceEvaluationPayloadAssembler spaceEvaluationPayloadAssembler;
     // 현재 센서값으로 comfort·CO2 상태를 평가합니다.
     private final SpaceStatusEvaluationService spaceStatusEvaluationService;
     // 실제 Wi-Fi RSSI로 정보 알림 lifecycle을 갱신합니다.
     private final WeakWifiAlertService weakWifiAlertService;
-
-    // 재실 결과를 아직 계산하지 않은 호출의 최신 snapshot을 트랜잭션으로 갱신합니다.
-    @Transactional
-    public void updateLatestSnapshot(String nodeId, Dht22Payload payload) {
-        // 현재 이 노드가 설치된 활성 공간을 조회합니다.
-        NodeInstallation installation = findActiveInstallation(nodeId);
-        // 설치되지 않은 테스트 노드는 공간·노드 snapshot을 만들지 않습니다.
-        if (installation == null) {
-            return;
-        }
-
-        // 현재 payload로 재실 상태를 계산한 뒤 두 snapshot을 갱신합니다.
-        updateSnapshot(installation, payload, occupancyFusionService.resolve(nodeId, payload));
-    }
 
     // 이미 계산한 재실 결과를 재사용해 최신 snapshot을 트랜잭션으로 갱신합니다.
     @Transactional
@@ -123,6 +110,7 @@ public class Dht22SnapshotUpdateService {
         SensorStatus sensorStatus = resolveSensorStatus(dht22Status, scd41Status);
 
         // 기존 node snapshot이 있으면 수신 시각과 최신 상태만 갱신하고 없으면 새로 만듭니다.
+        // 같은 node는 ingestion state row lock으로 이미 직렬화되므로 빈 unique-index gap을 잠그지 않습니다.
         nodeStatusSnapshotRepository.findByNode_Id(node.getId())
                 .ifPresentOrElse(
                         nodeStatus -> nodeStatus.markSensorReceived(
@@ -168,18 +156,28 @@ public class Dht22SnapshotUpdateService {
         // 화면과 DB에서 일정한 소수 둘째 자리로 습도를 저장합니다.
         BigDecimal humidity = toScaledBigDecimal(payload.getHumidity());
 
-        // 공간 snapshot이 있으면 갱신하고 없으면 현재 설치 정보를 기준으로 새로 생성합니다.
+        // snapshot row가 아직 없어도 잠금 기준이 존재하도록 space 본체 row를 먼저 잠급니다.
+        spaceRepository.findByIdForUpdate(installation.getSpace().getId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "telemetry 설치 공간을 찾을 수 없습니다. spaceId=" + installation.getSpace().getId()
+                ));
+        // 같은 공간은 위 row lock으로 직렬화되므로 snapshot 자체는 일반 조회합니다.
         spaceStatusSnapshotRepository.findBySpace_Id(installation.getSpace().getId())
                 .ifPresentOrElse(
-                        spaceStatus -> updateExistingSpaceStatus(
-                                spaceStatus,
-                                installation,
-                                temperature,
-                                humidity,
-                                payload,
-                                occupancy,
-                                receivedAt
-                        ),
+                        spaceStatus -> {
+                            // 다른 노드의 더 최신 telemetry가 이미 공간을 갱신했다면 과거 값으로 되돌리지 않습니다.
+                            if (!spaceStatus.isNewerThan(receivedAt)) {
+                                updateExistingSpaceStatus(
+                                        spaceStatus,
+                                        installation,
+                                        temperature,
+                                        humidity,
+                                        payload,
+                                        occupancy,
+                                        receivedAt
+                                );
+                            }
+                        },
                         () -> spaceStatusSnapshotRepository.save(createSpaceStatusSnapshot(
                                 installation,
                                 temperature,

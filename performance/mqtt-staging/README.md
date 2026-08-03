@@ -10,6 +10,7 @@
 - Spring API 1: `127.0.0.1:18080`
 - Spring API 2: `127.0.0.1:18081` (`multi-backend` profile에서만 기동)
 - 모든 포트는 Mac loopback에만 열리므로 외부·라즈베리파이·운영 Docker network에 노출되지 않습니다.
+- 수동 ACK 1,000건 burst가 Mosquitto 기본 per-client queue 1,000건에 먼저 막히지 않도록 staging broker의 `max_queued_messages`만 20,000으로 높였습니다. 운영 Mosquitto 설정을 변경하거나 같은 값을 권장한다는 뜻은 아닙니다.
 
 ## 기동과 정리
 
@@ -60,7 +61,9 @@ docker compose -f performance/mqtt-staging/docker-compose.yml --profile simulato
 
 처음에는 MQTT callback 안에서 MySQL snapshot 갱신, 재실 판정, InfluxDB 적재까지 직렬로 실행했다. `200개 노드 x 1초 x 120초 = 24,000건` QoS 1 발행에서 InfluxDB `co2_ppm` 적재는 10,141건에 그쳤고, Mosquitto 로그에 subscriber의 outgoing message drop이 남았다. Influx 비동기 batch write만으로는 callback 병목을 없앨 수 없었다.
 
-따라서 `TelemetryIngestionDispatcher`를 추가했다. MQTT callback은 JSON을 해석한 뒤 `nodeId` 해시로 선택한 8개 단일 worker 중 하나의 bounded queue에 넣고 즉시 반환한다. 같은 node는 항상 같은 worker를 사용하므로 순서는 보존하고, 서로 다른 node는 병렬로 처리한다. queue가 가득 차면 callback이 대기해 메모리에서 임의로 버리지 않고 broker까지 backpressure를 전파한다.
+따라서 `TelemetryIngestionDispatcher`를 추가해 `nodeId` 해시로 선택한 8개 단일 worker와 bounded queue로 저장 작업을 분리했다. 이후 ACK·DB 영속화 사이의 유실 경계를 보완하면서 callback은 worker 전달 뒤 ACK를 보류하고, worker의 MySQL transaction이 commit된 뒤에만 수동 ACK한다. 같은 node는 같은 worker를 사용하고 MySQL의 node별 ingestion state row를 잠가 순서를 유지한다. queue가 가득 차면 callback이 대기해 임의 drop 대신 broker 방향으로 backpressure를 전달한다.
+
+MySQL transaction은 sequence·occupancy 상태, 최신 snapshot과 InfluxDB용 outbox를 함께 확정한다. InfluxDB 전달은 별도 publisher가 blocking batch write로 성공을 확인한 뒤 outbox를 완료 처리하며, 실패한 row는 DB 상태로 재시도한다. outbox scheduler가 snapshot이나 occupancy를 다시 계산하지는 않는다.
 
 수정 뒤 아래 조건으로 다시 검증했다.
 
@@ -78,18 +81,20 @@ QoS: 1
 
 ```text
 simulator published_messages: 24,000
+MySQL telemetry_outbox COMPLETED: 24,000
 InfluxDB co2_ppm 전체 count: 24,000
 노드별 co2_ppm count 최솟값: 24
 노드별 co2_ppm count 최댓값: 24
 MySQL node_status_snapshots / space_status_snapshots: 1,000 / 1,000행
+telemetry_ingestion_states: 1,000행, 모든 last_sequence_no=24
 Mosquitto dropped/error/denied 로그: 없음
 ```
 
-이는 1,000개의 가상 node identity가 5초 버스트로 보낸 QoS 1 telemetry를 현재 Spring 수집 경로가 이 조건에서 누락 없이 InfluxDB까지 전달했다는 증거다. Raspberry Pi의 CPU·Wi-Fi·실제 펌웨어 네트워크, 30분 이상 지속 수집, InfluxDB 장기 지연, 다중 Spring subscriber는 아직 이 실험으로 증명하지 않는다.
+이는 1,000개의 가상 node identity가 5초 주기로 보낸 QoS 1 telemetry 24,000건을 현재 Spring 수집 경로가 MySQL transaction과 outbox를 거쳐 InfluxDB까지 전달했다는 증거다. 이 staging의 callback 종료·MySQL 중단·InfluxDB 중단 실험에서는 미확인 QoS 재전달과 재시작 후 outbox 복구도 확인했다. Raspberry Pi의 CPU·Wi-Fi·실제 펌웨어 QoS, broker 재시작 뒤 session persistence, 장기 지속 수집과 다중 Spring subscriber는 증명하지 않는다.
 
 ## QoS 1 중복·순서 역전 검증
 
-새 telemetry 계약의 `boot_id`와 `sequence_no`가 있을 때만 Spring은 노드·부팅 세션별 최대 순번을 Redis에서 원자적으로 비교합니다. `duplicate`는 같은 순번을 두 번 발행하고, `out-of-order`는 최신 순번 뒤에 직전 순번을 한 번 더 발행합니다. 두 경우 모두 중복·과거 메시지는 재실 계산과 MySQL·InfluxDB 적재 전에 건너뜁니다.
+`boot_id`와 `sequence_no`가 있을 때 Spring은 node별 MySQL ingestion state row를 transaction 안에서 잠그고 최대 순번을 비교합니다. `duplicate`는 같은 순번을 두 번 발행하고, `out-of-order`는 최신 순번 뒤에 직전 순번을 한 번 더 발행합니다. 두 경우 모두 snapshot·occupancy·outbox를 변경하지 않습니다. 이 durable state가 처리 완료 기준이며 Redis 응답 cache와 single-flight는 이 경로와 별개입니다.
 
 ```bash
 SIMULATOR_NODE_COUNT=10 SIMULATOR_INTERVAL_SECONDS=1 SIMULATOR_DURATION_SECONDS=30 MQTT_QOS=1 SIMULATOR_SEQUENCE_MODE=duplicate \
@@ -120,9 +125,10 @@ docker compose -f performance/mqtt-staging/docker-compose.yml --profile simulato
 ## 검증 대상
 
 1. MQTT topic `airs/node/stage_node_001/telemetry`가 Spring subscriber까지 전달되는지
-2. 한 telemetry가 MySQL 최신 snapshot과 InfluxDB `airs_stage_raw/sensor_data`에 모두 적재되는지
+2. 한 telemetry의 sequence·snapshot·outbox가 같은 MySQL transaction으로 확정되고 InfluxDB `airs_stage_raw/sensor_data`까지 전달되는지
 3. fixture 노드 수가 늘어도 snapshot row, raw field 행, alert lifecycle이 일관되게 유지되는지
 4. 변화량 정책이 절대값만이 아니라 `co2_rate_10m`을 근거로 `CO2_RAPID_RISE` 알림을 생성하는지
 5. `boot_id`·`sequence_no`가 있는 QoS 1 telemetry에서 중복·순서 역전이 최신 상태를 되돌리지 않는지
+6. MySQL·InfluxDB 중단과 Spring 재시작 뒤 outbox가 `RETRY`에서 `COMPLETED`로 복구되는지
 
 이 환경은 실제 운영 처리량을 증명하는 최종 성능 수치용이 아닙니다. 하드웨어·Docker Desktop 자원·로컬 네트워크의 영향을 받으므로, 병목 재현과 회귀 검증을 위한 안전한 실험장으로 사용합니다.

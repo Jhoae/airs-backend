@@ -5,13 +5,18 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 compose_file="$script_dir/docker-compose.yml"
 
-echo "[MySQL] 활성 설치·최신 snapshot·알림 집계"
+echo "[MySQL] 활성 설치·최신 snapshot·telemetry 전달·알림 집계"
 docker compose -f "$compose_file" exec -T mysql \
   mysql -uroot -pairs-stage-root-password airs_stage -e '
     SELECT
       (SELECT COUNT(*) FROM node_installations WHERE is_active = TRUE) AS active_installations,
       (SELECT COUNT(*) FROM node_status_snapshots) AS node_snapshots,
       (SELECT COUNT(*) FROM space_status_snapshots) AS space_snapshots,
+      (SELECT COUNT(*) FROM telemetry_ingestion_states) AS ingestion_states,
+      (SELECT COUNT(*) FROM telemetry_outbox WHERE status = "PENDING") AS outbox_pending,
+      (SELECT COUNT(*) FROM telemetry_outbox WHERE status = "RETRY") AS outbox_retry,
+      (SELECT COUNT(*) FROM telemetry_outbox WHERE status = "COMPLETED") AS outbox_completed,
+      (SELECT COUNT(*) FROM telemetry_outbox WHERE status = "DEAD") AS outbox_dead,
       (SELECT COUNT(*) FROM alerts WHERE status = "ACTIVE") AS active_alerts,
       (SELECT COUNT(*) FROM alerts WHERE alert_type = "CO2_RAPID_RISE" AND status = "ACTIVE") AS active_co2_rapid_rise_alerts;
   '

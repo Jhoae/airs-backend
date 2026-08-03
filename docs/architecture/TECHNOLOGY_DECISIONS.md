@@ -21,8 +21,11 @@ node_01
   -> topic: airs/node/node_01/telemetry
   -> Mosquitto broker
   -> Spring MqttDht22Subscriber
-  -> Dht22IngestionService
-  -> MySQL 최신 snapshot + InfluxDB raw sensor_data
+  -> nodeId 기반 striped worker
+  -> MySQL sequence·occupancy·최신 snapshot + telemetry outbox transaction
+  -> MQTT ACK
+  -> outbox publisher
+  -> InfluxDB raw sensor_data
 ```
 
 예를 들어 `{ "temperature_c": 24.3, "humidity_pct": 53.2, "co2_ppm": 842, "pir_detected": 1 }` payload를 받으면 Spring은 node ID를 topic에서 분리하고, 최신 화면용 MySQL snapshot과 시계열 분석용 InfluxDB raw point에 각각 반영한다.
@@ -33,7 +36,7 @@ node_01
 
 그럼에도 펌웨어 재시도, 브리지 재발행, 향후 QoS 1 발행으로 같은 telemetry가 다시 들어올 수 있으므로 소비자는 멱등성을 준비해야 한다. MySQL 최신 snapshot은 같은 노드 행을 갱신하므로 값이 크게 누적되지는 않지만, `OccupancyFusionService`의 연속 PIR·마지막 움직임 이력은 같은 메시지를 두 번 처리하면 판정에 영향을 받을 수 있다.
 
-### 다음 개선 - 메시지 식별자와 Redis 중복 제거
+### 메시지 식별자와 durable 처리 상태
 
 펌웨어 payload에 `boot_id`와 `sequence_no`를 추가한다. `boot_id`는 기기가 켜질 때마다 새로 만드는 식별자이고, `sequence_no`는 그 부팅 동안 telemetry마다 1씩 증가한다. 예시는 다음과 같다.
 
@@ -48,9 +51,11 @@ node_01
 }
 ```
 
-Spring은 재실 융합보다 먼저 Redis에 `SET airs:mqtt:dedup:node_01:7f3a9c2e:1842 1 NX EX 600`을 시도한다. `NX`는 키가 아직 없을 때만 저장하라는 원자 조건이고, `EX 600`은 600초 뒤 키를 자동 삭제하는 TTL이다. 처음 수신은 키 생성에 성공해 적재한다. 같은 메시지가 재전송되면 키가 이미 있으므로 저장이 실패하고 MySQL, InfluxDB, 재실 이력 갱신을 모두 건너뛴다.
+Redis sequence를 먼저 갱신하면 이후 MySQL 저장이 실패해도 재전송 메시지가 duplicate로 차단될 수 있다. 현재는 node별 `telemetry_ingestion_states` row를 MySQL transaction 안에서 잠그고 `boot_id + sequence_no`를 비교한다. 같은 transaction이 occupancy 상태와 최신 snapshot을 갱신하고 immutable `telemetry_outbox`를 저장한 뒤 commit되어야 ACK한다. 따라서 rollback된 sequence가 처리 완료로 남지 않는다.
 
-`nodeId + sequence_no`만 쓰면 기기 재부팅 후 sequence가 0부터 다시 시작할 때 이전 키와 충돌할 수 있다. 그래서 재부팅 구분자인 `boot_id`를 함께 사용하거나, 전원이 꺼져도 유지되는 단조 증가 번호를 사용해야 한다. 현재 telemetry에는 두 필드가 없으므로 이 기능은 아직 구현·활성화하지 않는다.
+InfluxDB 전달은 transaction 뒤 별도 publisher가 담당한다. blocking write가 성공하면 outbox를 `COMPLETED`, 실패하면 `RETRY`로 바꾸며 Spring 재시작 후에도 남은 row를 다시 조회한다. 이 구조는 MySQL과 InfluxDB를 분산 transaction으로 묶지 않고, MySQL에 확정된 point projection을 재전달하는 방식이다.
+
+`nodeId + sequence_no`만 쓰면 기기 재부팅 후 sequence가 0부터 다시 시작할 때 이전 이벤트와 충돌할 수 있으므로 `boot_id`를 함께 사용한다. 두 값 중 하나라도 없는 legacy payload는 계속 수신하지만 정확한 멱등성과 순서를 보장하지 않는 best-effort 경로로 분리한다. 장치 측정 timestamp가 없으므로 이전 boot가 뒤늦게 재등장한 경우의 절대 순서도 복원할 수 없다.
 
 ### MQTT 보안 강화 순서
 

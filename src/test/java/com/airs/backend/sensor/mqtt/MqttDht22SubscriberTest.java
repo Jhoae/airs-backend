@@ -2,13 +2,13 @@ package com.airs.backend.sensor.mqtt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 
 import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,10 +16,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import com.airs.backend.sensor.config.MqttProperties;
 import com.airs.backend.sensor.dto.Dht22Payload;
 import com.airs.backend.sensor.service.TelemetryIngestionDispatcher;
+import com.airs.backend.sensor.service.TelemetryIngestionCommand;
+import com.airs.backend.sensor.service.TelemetryPayloadValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
@@ -27,6 +30,8 @@ class MqttDht22SubscriberTest {
 
     @Mock
     private TelemetryIngestionDispatcher telemetryIngestionDispatcher;
+    @Mock
+    private MqttClient mqttClient;
 
     private MqttDht22Subscriber mqttDht22Subscriber;
 
@@ -40,8 +45,11 @@ class MqttDht22SubscriberTest {
         mqttDht22Subscriber = new MqttDht22Subscriber(
                 mqttProperties,
                 new ObjectMapper().findAndRegisterModules(),
-                telemetryIngestionDispatcher
+                telemetryIngestionDispatcher,
+                new TelemetryPayloadValidator(),
+                new SimpleMeterRegistry()
         );
+        ReflectionTestUtils.setField(mqttDht22Subscriber, "mqttClient", mqttClient);
     }
 
     @Test
@@ -65,16 +73,17 @@ class MqttDht22SubscriberTest {
                 message
         );
 
-        ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(telemetryIngestionDispatcher).dispatch(eq("node_01"), payloadCaptor.capture());
+        ArgumentCaptor<TelemetryIngestionCommand> commandCaptor = ArgumentCaptor.forClass(TelemetryIngestionCommand.class);
+        verify(telemetryIngestionDispatcher).dispatch(commandCaptor.capture());
 
-        Dht22Payload payload = payloadCaptor.getValue();
+        assertEquals("node_01", commandCaptor.getValue().nodeId());
+        Dht22Payload payload = commandCaptor.getValue().payload();
         assertEquals(26.5, payload.getTemperature());
         assertEquals(50.3, payload.getHumidity());
         assertEquals(842, payload.getCo2Ppm());
         assertEquals("boot-node-01", payload.getBootId());
         assertEquals(42L, payload.getSequenceNo());
-        assertEquals(Instant.parse("2026-04-10T10:00:00Z"), payload.getTimestamp());
+        assertEquals(commandCaptor.getValue().receivedAt(), payload.getTimestamp());
     }
 
     @Test
@@ -96,10 +105,10 @@ class MqttDht22SubscriberTest {
                 message
         );
 
-        ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(telemetryIngestionDispatcher).dispatch(eq("node_01"), payloadCaptor.capture());
+        ArgumentCaptor<TelemetryIngestionCommand> commandCaptor = ArgumentCaptor.forClass(TelemetryIngestionCommand.class);
+        verify(telemetryIngestionDispatcher).dispatch(commandCaptor.capture());
 
-        Dht22Payload payload = payloadCaptor.getValue();
+        Dht22Payload payload = commandCaptor.getValue().payload();
         assertEquals(26.5, payload.getTemperature());
         assertEquals(50.3, payload.getHumidity());
         assertEquals(956, payload.getCo2Ppm());
@@ -133,10 +142,10 @@ class MqttDht22SubscriberTest {
                 message
         );
 
-        ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(telemetryIngestionDispatcher).dispatch(eq("node_01"), payloadCaptor.capture());
+        ArgumentCaptor<TelemetryIngestionCommand> commandCaptor = ArgumentCaptor.forClass(TelemetryIngestionCommand.class);
+        verify(telemetryIngestionDispatcher).dispatch(commandCaptor.capture());
 
-        Dht22Payload payload = payloadCaptor.getValue();
+        Dht22Payload payload = commandCaptor.getValue().payload();
         assertEquals(21.1, payload.getTemperature());
         assertEquals(63.1, payload.getHumidity());
         assertEquals(1900, payload.getCo2Ppm());
@@ -157,5 +166,47 @@ class MqttDht22SubscriberTest {
                         "extractNodeId",
                         "airs/node_only"
                 ));
+    }
+
+    @Test
+    void acknowledgment_should_be_deferred_until_dispatched_command_completes() throws Exception {
+        String json = """
+                {"temperature_c": 24.3, "humidity_pct": 52.0, "boot_id": "boot-a", "sequence_no": 42}
+                """;
+        MqttMessage message = new MqttMessage(json.getBytes(StandardCharsets.UTF_8));
+        message.setId(77);
+        message.setQos(1);
+
+        ReflectionTestUtils.invokeMethod(
+                mqttDht22Subscriber,
+                "handleMessage",
+                "airs/node/node_01/telemetry",
+                message
+        );
+
+        ArgumentCaptor<TelemetryIngestionCommand> commandCaptor = ArgumentCaptor.forClass(TelemetryIngestionCommand.class);
+        verify(telemetryIngestionDispatcher).dispatch(commandCaptor.capture());
+        org.mockito.Mockito.verifyNoInteractions(mqttClient);
+
+        commandCaptor.getValue().acknowledgment().complete();
+
+        verify(mqttClient).messageArrivedComplete(77, 1);
+    }
+
+    @Test
+    void malformed_json_should_be_acknowledged_without_dispatch() throws Exception {
+        MqttMessage message = new MqttMessage("{not-json".getBytes(StandardCharsets.UTF_8));
+        message.setId(78);
+        message.setQos(1);
+
+        ReflectionTestUtils.invokeMethod(
+                mqttDht22Subscriber,
+                "handleMessage",
+                "airs/node/node_01/telemetry",
+                message
+        );
+
+        verify(mqttClient).messageArrivedComplete(78, 1);
+        org.mockito.Mockito.verifyNoInteractions(telemetryIngestionDispatcher);
     }
 }

@@ -44,6 +44,8 @@ class FlywayInitialSchemaMySqlTest {
                     "node_status_snapshots",
                     "space_status_snapshots",
                     "spaces",
+                    "telemetry_ingestion_states",
+                    "telemetry_outbox",
                     "user_preferences",
                     "users"
             );
@@ -51,7 +53,7 @@ class FlywayInitialSchemaMySqlTest {
             assertThat(columnExists(statement, "campus_admins", "approved")).isFalse();
             assertThat(columnExists(statement, "campus_admins", "status")).isTrue();
             assertThat(columnType(statement, "alerts", "alert_type")).startsWith("varchar");
-            assertThat(successfulSqlMigrationCount(statement)).isEqualTo(4);
+            assertThat(successfulSqlMigrationCount(statement)).isEqualTo(5);
         }
     }
 

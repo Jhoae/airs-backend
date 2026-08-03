@@ -5,11 +5,10 @@ public enum TelemetryDeliveryDecision {
     ACCEPTED,
     DUPLICATE,
     OUT_OF_ORDER,
-    LEGACY_BYPASS,
-    REDIS_BYPASS;
+    LEGACY_BYPASS;
 
     // ACCEPTED와 호환 payload는 이후 재실·저장 처리를 계속한다.
     public boolean shouldIngest() {
-        return this == ACCEPTED || this == LEGACY_BYPASS || this == REDIS_BYPASS;
+        return this == ACCEPTED || this == LEGACY_BYPASS;
     }
 }

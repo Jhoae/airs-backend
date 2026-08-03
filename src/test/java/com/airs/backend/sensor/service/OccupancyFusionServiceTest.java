@@ -18,7 +18,7 @@ class OccupancyFusionServiceTest {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
         Dht22Payload payload = payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 1);
 
-        OccupancyFusionResult result = service.resolve("node_01", payload);
+        OccupancyFusionResult result = service.resolve(payload, OccupancyFusionMemory.empty()).result();
 
         assertEquals(TelemetryOccupancyState.PRESENT, result.state());
         assertEquals(true, result.humanDetected());
@@ -33,9 +33,9 @@ class OccupancyFusionServiceTest {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
 
         OccupancyFusionResult result = service.resolve(
-                "node_01",
-                payload(Instant.parse("2026-07-07T00:00:00Z"), 1, 0)
-        );
+                payload(Instant.parse("2026-07-07T00:00:00Z"), 1, 0),
+                OccupancyFusionMemory.empty()
+        ).result();
 
         assertEquals(TelemetryOccupancyState.UNKNOWN, result.state());
         assertNull(result.humanDetected());
@@ -48,12 +48,15 @@ class OccupancyFusionServiceTest {
     @Test
     void resolve_should_return_present_when_pir_is_detected_twice_in_a_row() {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
-        service.resolve("node_01", payload(Instant.parse("2026-07-07T00:00:00Z"), 1, 0));
+        OccupancyFusionTransition first = service.resolve(
+                payload(Instant.parse("2026-07-07T00:00:00Z"), 1, 0),
+                OccupancyFusionMemory.empty()
+        );
 
         OccupancyFusionResult result = service.resolve(
-                "node_01",
-                payload(Instant.parse("2026-07-07T00:00:05Z"), 1, 0)
-        );
+                payload(Instant.parse("2026-07-07T00:00:05Z"), 1, 0),
+                first.nextMemory()
+        ).result();
 
         assertEquals(TelemetryOccupancyState.PRESENT, result.state());
         assertEquals(true, result.humanDetected());
@@ -66,12 +69,15 @@ class OccupancyFusionServiceTest {
     @Test
     void resolve_should_keep_present_until_stale_after_minutes() {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
-        service.resolve("node_01", payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 1));
+        OccupancyFusionTransition first = service.resolve(
+                payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 1),
+                OccupancyFusionMemory.empty()
+        );
 
         OccupancyFusionResult result = service.resolve(
-                "node_01",
-                payload(Instant.parse("2026-07-07T00:05:00Z"), 0, 0)
-        );
+                payload(Instant.parse("2026-07-07T00:05:00Z"), 0, 0),
+                first.nextMemory()
+        ).result();
 
         assertEquals(TelemetryOccupancyState.PRESENT, result.state());
         assertEquals(true, result.humanDetected());
@@ -82,12 +88,15 @@ class OccupancyFusionServiceTest {
     @Test
     void resolve_should_return_absent_after_stale_after_minutes() {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
-        service.resolve("node_01", payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 1));
+        OccupancyFusionTransition first = service.resolve(
+                payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 1),
+                OccupancyFusionMemory.empty()
+        );
 
         OccupancyFusionResult result = service.resolve(
-                "node_01",
-                payload(Instant.parse("2026-07-07T00:11:00Z"), 0, 0)
-        );
+                payload(Instant.parse("2026-07-07T00:11:00Z"), 0, 0),
+                first.nextMemory()
+        ).result();
 
         assertEquals(TelemetryOccupancyState.ABSENT, result.state());
         assertEquals(false, result.humanDetected());
@@ -101,9 +110,9 @@ class OccupancyFusionServiceTest {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
 
         OccupancyFusionResult result = service.resolve(
-                "node_01",
-                payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 0)
-        );
+                payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 0),
+                OccupancyFusionMemory.empty()
+        ).result();
 
         assertEquals(TelemetryOccupancyState.UNKNOWN, result.state());
         assertNull(result.humanDetected());
@@ -116,12 +125,15 @@ class OccupancyFusionServiceTest {
     @Test
     void resolve_should_return_absent_after_stale_after_when_no_motion_continues_without_prior_detection() {
         OccupancyFusionService service = new OccupancyFusionService(properties(10.0));
-        service.resolve("node_01", payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 0));
+        OccupancyFusionTransition first = service.resolve(
+                payload(Instant.parse("2026-07-07T00:00:00Z"), 0, 0),
+                OccupancyFusionMemory.empty()
+        );
 
         OccupancyFusionResult result = service.resolve(
-                "node_01",
-                payload(Instant.parse("2026-07-07T00:11:00Z"), 0, 0)
-        );
+                payload(Instant.parse("2026-07-07T00:11:00Z"), 0, 0),
+                first.nextMemory()
+        ).result();
 
         assertEquals(TelemetryOccupancyState.ABSENT, result.state());
         assertEquals(false, result.humanDetected());

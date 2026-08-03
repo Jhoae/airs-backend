@@ -155,6 +155,10 @@ public class SpaceStatusSnapshot {
         this.spaceSummary = comfortSummary;
     }
 
+    public boolean isNewerThan(LocalDateTime receivedAt) {
+        return this.lastUpdatedAt != null && this.lastUpdatedAt.isAfter(receivedAt);
+    }
+
     private String toOccupancySummary(OccupancyStatus occupancyStatus) {
         if (occupancyStatus == null) {
             return null;

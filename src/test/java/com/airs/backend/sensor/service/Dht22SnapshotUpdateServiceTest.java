@@ -23,6 +23,7 @@ import com.airs.backend.location.entity.Building;
 import com.airs.backend.location.entity.Campus;
 import com.airs.backend.location.entity.Space;
 import com.airs.backend.location.entity.SpaceType;
+import com.airs.backend.location.repository.SpaceRepository;
 import com.airs.backend.node.entity.AirsNode;
 import com.airs.backend.node.entity.NodeInstallation;
 import com.airs.backend.node.repository.NodeInstallationRepository;
@@ -72,7 +73,7 @@ class Dht22SnapshotUpdateServiceTest {
     private SpaceStatusSnapshotRepository spaceStatusSnapshotRepository;
 
     @Mock
-    private OccupancyFusionService occupancyFusionService;
+    private SpaceRepository spaceRepository;
 
     @Mock
     private SpaceEvaluationPayloadAssembler spaceEvaluationPayloadAssembler;
@@ -120,6 +121,8 @@ class Dht22SnapshotUpdateServiceTest {
                 .thenReturn(Optional.of(fixture.installation()));
         when(nodeStatusSnapshotRepository.findByNode_Id("node_01"))
                 .thenReturn(Optional.of(nodeStatus));
+        when(spaceRepository.findByIdForUpdate(fixture.space().getId()))
+                .thenReturn(Optional.of(fixture.space()));
         when(spaceStatusSnapshotRepository.findBySpace_Id(fixture.space().getId()))
                 .thenReturn(Optional.of(spaceStatus));
         OccupancyFusionResult occupancy = new OccupancyFusionResult(
@@ -130,11 +133,10 @@ class Dht22SnapshotUpdateServiceTest {
                 0.0,
                 true
         );
-        when(occupancyFusionService.resolve("node_01", payload)).thenReturn(occupancy);
         givenPayloadAssembly(fixture, payload, occupancy);
         givenAiEvaluation(82, "쾌적", Co2Status.NORMAL);
 
-        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload);
+        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload, occupancy);
 
         LocalDateTime receivedAt = LocalDateTime.ofInstant(timestamp, ZoneId.of("Asia/Seoul"));
         assertEquals(ConnectionStatus.ONLINE, nodeStatus.getConnectionStatus());
@@ -166,6 +168,8 @@ class Dht22SnapshotUpdateServiceTest {
                 .thenReturn(Optional.of(fixture.installation()));
         when(nodeStatusSnapshotRepository.findByNode_Id("node_01"))
                 .thenReturn(Optional.empty());
+        when(spaceRepository.findByIdForUpdate(fixture.space().getId()))
+                .thenReturn(Optional.of(fixture.space()));
         when(spaceStatusSnapshotRepository.findBySpace_Id(fixture.space().getId()))
                 .thenReturn(Optional.empty());
         OccupancyFusionResult occupancy = new OccupancyFusionResult(
@@ -176,11 +180,10 @@ class Dht22SnapshotUpdateServiceTest {
                 null,
                 false
         );
-        when(occupancyFusionService.resolve("node_01", payload)).thenReturn(occupancy);
         givenPayloadAssembly(fixture, payload, occupancy);
         givenAiEvaluation(76, "보통", Co2Status.NORMAL);
 
-        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload);
+        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload, occupancy);
 
         verify(nodeStatusSnapshotRepository).save(org.mockito.ArgumentMatchers.any(NodeStatusSnapshot.class));
         verify(spaceStatusSnapshotRepository).save(org.mockito.ArgumentMatchers.any(SpaceStatusSnapshot.class));
@@ -216,6 +219,8 @@ class Dht22SnapshotUpdateServiceTest {
                 .thenReturn(Optional.of(fixture.installation()));
         when(nodeStatusSnapshotRepository.findByNode_Id("node_01"))
                 .thenReturn(Optional.of(nodeStatus));
+        when(spaceRepository.findByIdForUpdate(fixture.space().getId()))
+                .thenReturn(Optional.of(fixture.space()));
         when(spaceStatusSnapshotRepository.findBySpace_Id(fixture.space().getId()))
                 .thenReturn(Optional.of(spaceStatus));
         OccupancyFusionResult occupancy = new OccupancyFusionResult(
@@ -226,11 +231,10 @@ class Dht22SnapshotUpdateServiceTest {
                 null,
                 false
         );
-        when(occupancyFusionService.resolve("node_01", payload)).thenReturn(occupancy);
         givenPayloadAssembly(fixture, payload, occupancy);
         givenAiEvaluation(65, "보통", Co2Status.NORMAL);
 
-        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload);
+        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload, occupancy);
 
         assertEquals(-58, nodeStatus.getWifiRssi());
         assertEquals(true, nodeStatus.getHumanDetected());
@@ -252,9 +256,20 @@ class Dht22SnapshotUpdateServiceTest {
         when(nodeInstallationRepository.findByNode_IdAndActiveTrue("node_01"))
                 .thenReturn(Optional.empty());
 
-        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload);
+        dht22SnapshotUpdateService.updateLatestSnapshot(
+                "node_01",
+                payload,
+                new OccupancyFusionResult(
+                        TelemetryOccupancyState.UNKNOWN,
+                        null,
+                        OccupancyStatus.UNKNOWN,
+                        null,
+                        null,
+                        false
+                )
+        );
 
-        verifyNoInteractions(nodeStatusSnapshotRepository, spaceStatusSnapshotRepository, occupancyFusionService);
+        verifyNoInteractions(nodeStatusSnapshotRepository, spaceStatusSnapshotRepository);
     }
 
     private void givenPayloadAssembly(

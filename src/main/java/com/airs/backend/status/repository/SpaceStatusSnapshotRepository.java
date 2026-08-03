@@ -3,7 +3,6 @@ package com.airs.backend.status.repository;
 import com.airs.backend.status.entity.SpaceStatusSnapshot;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
-
 import java.util.List;
 import java.util.Optional;
 

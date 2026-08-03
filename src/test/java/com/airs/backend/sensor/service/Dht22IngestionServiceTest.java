@@ -1,153 +1,159 @@
 package com.airs.backend.sensor.service;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
-
-import java.time.Instant;
-
-import org.junit.jupiter.api.Test;
+import com.airs.backend.sensor.dto.Dht22Payload;
+import com.airs.backend.sensor.entity.TelemetryIngestionState;
+import com.airs.backend.sensor.entity.TelemetryOutbox;
+import com.airs.backend.sensor.repository.TelemetryIngestionStateRepository;
+import com.airs.backend.sensor.repository.TelemetryOutboxRepository;
+import com.airs.backend.status.entity.OccupancyStatus;
+import com.airs.backend.status.entity.TelemetryOccupancyState;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
-import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.airs.backend.sensor.dto.Dht22Payload;
-import com.airs.backend.sensor.influx.InfluxDht22Writer;
+import java.time.Instant;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class Dht22IngestionServiceTest {
 
     @Mock
-    private InfluxDht22Writer influxDht22Writer;
-
+    private TelemetryIngestionStateRepository stateRepository;
     @Mock
-    private Dht22SnapshotUpdateService dht22SnapshotUpdateService;
-
+    private TelemetryOutboxRepository outboxRepository;
     @Mock
     private OccupancyFusionService occupancyFusionService;
-
     @Mock
-    private TelemetryDeliveryGuard telemetryDeliveryGuard;
+    private Dht22SnapshotUpdateService snapshotUpdateService;
 
-    @InjectMocks
-    private Dht22IngestionService dht22IngestionService;
+    private Dht22IngestionService service;
+    private final Instant receivedAt = Instant.parse("2026-08-02T10:00:00Z");
 
     @BeforeEach
     void setUp() {
-        lenient().when(telemetryDeliveryGuard.evaluate(any(), any())).thenReturn(TelemetryDeliveryDecision.LEGACY_BYPASS);
+        service = new Dht22IngestionService(
+                new TelemetryPayloadValidator(),
+                stateRepository,
+                outboxRepository,
+                occupancyFusionService,
+                snapshotUpdateService,
+                new ObjectMapper().findAndRegisterModules()
+        );
     }
 
     @Test
-    void ingest_should_fill_server_time_when_timestamp_is_missing() {
-        Dht22Payload payload = new Dht22Payload(26.5, 50.3, null);
+    void ingest_should_save_snapshot_state_and_outbox_in_one_call() {
+        Dht22Payload payload = payload("boot-a", 42);
+        when(stateRepository.findByNodeIdForUpdate("node_01"))
+                .thenReturn(Optional.of(new TelemetryIngestionState("node_01")));
+        when(occupancyFusionService.resolve(eq(payload), any(OccupancyFusionMemory.class)))
+                .thenReturn(transition());
 
-        dht22IngestionService.ingest("node_01", payload);
+        TelemetryDeliveryDecision decision = service.ingest("node_01", payload, receivedAt);
 
-        ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(influxDht22Writer).write(eq("node_01"), payloadCaptor.capture(), any());
-
-        Dht22Payload savedPayload = payloadCaptor.getValue();
-        assertEquals(26.5, savedPayload.getTemperature());
-        assertEquals(50.3, savedPayload.getHumidity());
-        assertNotNull(savedPayload.getTimestamp());
-        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(savedPayload), any());
+        assertEquals(TelemetryDeliveryDecision.ACCEPTED, decision);
+        verify(stateRepository).insertIfMissing("node_01", receivedAt);
+        verify(snapshotUpdateService).updateLatestSnapshot("node_01", payload, transition().result());
+        ArgumentCaptor<TelemetryOutbox> outboxCaptor = ArgumentCaptor.forClass(TelemetryOutbox.class);
+        verify(outboxRepository).save(outboxCaptor.capture());
+        assertEquals("node_01|boot-a|42", outboxCaptor.getValue().getEventKey());
+        assertEquals(receivedAt, outboxCaptor.getValue().getReceivedAt());
+        verify(stateRepository).save(any(TelemetryIngestionState.class));
     }
 
     @Test
-    void ingest_should_use_payload_timestamp_when_it_exists() {
-        Instant timestamp = Instant.parse("2026-04-10T10:00:00Z");
-        Dht22Payload payload = new Dht22Payload(25.0, 45.0, timestamp);
+    void ingest_should_reject_duplicate_before_occupancy_and_snapshot() {
+        Dht22Payload payload = payload("boot-a", 42);
+        TelemetryIngestionState state = state("boot-a", 42);
+        when(stateRepository.findByNodeIdForUpdate("node_01")).thenReturn(Optional.of(state));
 
-        dht22IngestionService.ingest("node_01", payload);
+        TelemetryDeliveryDecision decision = service.ingest("node_01", payload, receivedAt);
 
-        ArgumentCaptor<Dht22Payload> payloadCaptor = ArgumentCaptor.forClass(Dht22Payload.class);
-        verify(influxDht22Writer).write(eq("node_01"), payloadCaptor.capture(), any());
-
-        assertEquals(timestamp, payloadCaptor.getValue().getTimestamp());
-        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payloadCaptor.getValue()), any());
-
-        InOrder inOrder = inOrder(dht22SnapshotUpdateService, influxDht22Writer);
-        inOrder.verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload), any());
-        inOrder.verify(influxDht22Writer).write(eq("node_01"), eq(payload), any());
+        assertEquals(TelemetryDeliveryDecision.DUPLICATE, decision);
+        verifyNoInteractions(occupancyFusionService, snapshotUpdateService, outboxRepository);
     }
 
     @Test
-    void ingest_should_try_influx_write_when_mysql_snapshot_update_fails() {
-        Dht22Payload payload = new Dht22Payload(25.0, 45.0, Instant.parse("2026-04-10T10:00:00Z"));
-        doThrow(new RuntimeException("mysql snapshot failure"))
-                .when(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload), any());
+    void ingest_should_reject_out_of_order_before_snapshot() {
+        Dht22Payload payload = payload("boot-a", 41);
+        when(stateRepository.findByNodeIdForUpdate("node_01"))
+                .thenReturn(Optional.of(state("boot-a", 42)));
 
-        assertDoesNotThrow(() -> dht22IngestionService.ingest("node_01", payload));
-
-        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload), any());
-        verify(influxDht22Writer).write(eq("node_01"), eq(payload), any());
+        assertEquals(
+                TelemetryDeliveryDecision.OUT_OF_ORDER,
+                service.ingest("node_01", payload, receivedAt)
+        );
+        verifyNoInteractions(occupancyFusionService, snapshotUpdateService, outboxRepository);
     }
 
     @Test
-    void ingest_should_keep_mysql_snapshot_update_when_influx_write_fails() {
-        Dht22Payload payload = new Dht22Payload(25.0, 45.0, Instant.parse("2026-04-10T10:00:00Z"));
-        doThrow(new RuntimeException("influx write failure"))
-                .when(influxDht22Writer).write(eq("node_01"), eq(payload), any());
+    void ingest_should_accept_new_boot_session() {
+        Dht22Payload payload = payload("boot-b", 1);
+        when(stateRepository.findByNodeIdForUpdate("node_01"))
+                .thenReturn(Optional.of(state("boot-a", 42)));
+        when(occupancyFusionService.resolve(eq(payload), any(OccupancyFusionMemory.class)))
+                .thenReturn(transition());
 
-        assertDoesNotThrow(() -> dht22IngestionService.ingest("node_01", payload));
-
-        verify(dht22SnapshotUpdateService).updateLatestSnapshot(eq("node_01"), eq(payload), any());
-        verify(influxDht22Writer).write(eq("node_01"), eq(payload), any());
+        assertEquals(TelemetryDeliveryDecision.ACCEPTED, service.ingest("node_01", payload, receivedAt));
+        verify(outboxRepository).save(any(TelemetryOutbox.class));
     }
 
     @Test
-    void ingest_should_fail_when_humidity_is_out_of_range() {
-        Dht22Payload payload = new Dht22Payload(26.5, 101.0, Instant.now());
+    void ingest_should_reject_invalid_sensor_value_before_database_work() {
+        Dht22Payload payload = payload("boot-a", 1);
+        payload.setHumidity(101.0);
 
-        assertThrows(IllegalArgumentException.class,
-                () -> dht22IngestionService.ingest("node_01", payload));
-
-        verifyNoInteractions(influxDht22Writer, dht22SnapshotUpdateService);
+        assertThrows(IllegalArgumentException.class, () -> service.ingest("node_01", payload, receivedAt));
+        verifyNoInteractions(stateRepository, outboxRepository, occupancyFusionService, snapshotUpdateService);
     }
 
     @Test
-    void ingest_should_fail_when_temperature_is_missing() {
-        Dht22Payload payload = new Dht22Payload(null, 50.3, Instant.now());
+    void ingest_should_reject_non_binary_presence_sensor_before_database_work() {
+        Dht22Payload payload = payload("boot-a", 1);
+        payload.setPirDetected(2);
 
-        assertThrows(IllegalArgumentException.class,
-                () -> dht22IngestionService.ingest("node_01", payload));
-
-        verifyNoInteractions(influxDht22Writer, dht22SnapshotUpdateService);
+        assertThrows(IllegalArgumentException.class, () -> service.ingest("node_01", payload, receivedAt));
+        verifyNoInteractions(stateRepository, outboxRepository, occupancyFusionService, snapshotUpdateService);
     }
 
-    @Test
-    void ingest_should_fail_when_co2_is_negative() {
-        Dht22Payload payload = new Dht22Payload(26.5, 50.3, -1, Instant.now());
-
-        assertThrows(IllegalArgumentException.class,
-                () -> dht22IngestionService.ingest("node_01", payload));
-
-        verifyNoInteractions(influxDht22Writer, dht22SnapshotUpdateService);
+    private TelemetryIngestionState state(String bootId, long sequenceNo) {
+        TelemetryIngestionState state = new TelemetryIngestionState("node_01");
+        state.acceptSequence(bootId, sequenceNo, receivedAt.minusSeconds(5));
+        return state;
     }
 
-    @Test
-    void ingest_should_skip_snapshot_and_raw_write_for_duplicate_telemetry() {
-        Dht22Payload payload = new Dht22Payload(26.5, 50.3, Instant.parse("2026-07-28T10:00:00Z"));
-        payload.setBootId("boot-node-01");
-        payload.setSequenceNo(42L);
-        when(telemetryDeliveryGuard.evaluate("node_01", payload)).thenReturn(TelemetryDeliveryDecision.DUPLICATE);
+    private Dht22Payload payload(String bootId, long sequenceNo) {
+        Dht22Payload payload = new Dht22Payload(24.3, 52.0, 812, receivedAt);
+        payload.setBootId(bootId);
+        payload.setSequenceNo(sequenceNo);
+        payload.setPirDetected(0);
+        payload.setMmwaveDetected(1);
+        return payload;
+    }
 
-        dht22IngestionService.ingest("node_01", payload);
-
-        verify(telemetryDeliveryGuard).evaluate("node_01", payload);
-        verifyNoInteractions(occupancyFusionService, dht22SnapshotUpdateService, influxDht22Writer);
+    private OccupancyFusionTransition transition() {
+        return new OccupancyFusionTransition(
+                new OccupancyFusionResult(
+                        TelemetryOccupancyState.PRESENT,
+                        true,
+                        OccupancyStatus.OCCUPIED,
+                        1,
+                        0.0,
+                        true
+                ),
+                new OccupancyFusionMemory(false, receivedAt, null)
+        );
     }
 }
