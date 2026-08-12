@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -33,7 +32,7 @@ public class Dht22IngestionService {
     // sequence·occupancy·snapshot·Influx outbox를 하나의 MySQL transaction으로 확정한다.
     @Transactional
     public TelemetryDeliveryDecision ingest(String nodeId, Dht22Payload payload, Instant receivedAt) {
-        telemetryPayloadValidator.validateAndStamp(nodeId, payload, receivedAt);
+        telemetryPayloadValidator.validate(nodeId, payload, receivedAt);
 
         // 빈 row를 FOR UPDATE로 조회해 gap lock을 잡지 않고, 같은 transaction 안에서 먼저 idempotent하게 준비합니다.
         telemetryIngestionStateRepository.insertIfMissing(nodeId, receivedAt);
@@ -41,10 +40,28 @@ public class Dht22IngestionService {
         TelemetryIngestionState state = telemetryIngestionStateRepository.findByNodeIdForUpdate(nodeId)
                 .orElseThrow(() -> new IllegalStateException("초기화한 telemetry ingestion state를 찾을 수 없습니다. nodeId=" + nodeId));
 
-        TelemetryDeliveryDecision decision = decideSequence(state, payload);
-        if (!decision.shouldIngest()) {
-            log.info("중복 또는 순서 역전 telemetry를 저장 전에 건너뜁니다. nodeId={}, decision={}, bootId={}, sequenceNo={}",
-                    nodeId, decision, payload.getBootId(), payload.getSequenceNo());
+        String eventKey = eventKey(nodeId, payload);
+        TelemetryDeliveryDecision decision = decideDelivery(state, payload, eventKey);
+        state.markReceived(receivedAt);
+
+        if (decision == TelemetryDeliveryDecision.DUPLICATE) {
+            telemetryIngestionStateRepository.save(state);
+            log.info("이미 처리한 MQTT telemetry 재전달을 건너뜁니다. nodeId={}, bootId={}, sequenceNo={}",
+                    nodeId, payload.getBootId(), payload.getSequenceNo());
+            return decision;
+        }
+
+        if (decision == TelemetryDeliveryDecision.ACCEPTED_LATE) {
+            saveOutbox(
+                    eventKey,
+                    nodeId,
+                    payload,
+                    receivedAt,
+                    TelemetryPointPayload.fromLate(nodeId, payload, receivedAt)
+            );
+            telemetryIngestionStateRepository.save(state);
+            log.info("늦게 도착한 고유 telemetry를 raw outbox에만 저장합니다. nodeId={}, bootId={}, sequenceNo={}, observedAt={}",
+                    nodeId, payload.getBootId(), payload.getSequenceNo(), payload.getObservedAt());
             return decision;
         }
 
@@ -56,44 +73,43 @@ public class Dht22IngestionService {
         dht22SnapshotUpdateService.updateLatestSnapshot(
                 nodeId,
                 payload,
-                occupancyTransition.result()
+                occupancyTransition.result(),
+                receivedAt
         );
 
-        TelemetryPointPayload pointPayload = TelemetryPointPayload.from(
+        TelemetryPointPayload pointPayload = TelemetryPointPayload.fromCurrent(
                 nodeId,
                 payload,
+                receivedAt,
                 occupancyTransition.result()
         );
-        telemetryOutboxRepository.save(new TelemetryOutbox(
-                eventKey(nodeId, payload),
-                nodeId,
-                payload.getBootId(),
-                payload.getSequenceNo(),
-                receivedAt,
-                serialize(pointPayload),
-                TelemetryPointPayload.SCHEMA_VERSION
-        ));
+        saveOutbox(eventKey, nodeId, payload, receivedAt, pointPayload);
 
-        state.acceptSequence(payload.getBootId(), payload.getSequenceNo(), receivedAt);
+        state.acceptCurrent(payload.getBootId(), payload.getSequenceNo(), payload.getObservedAt(), receivedAt);
         state.applyOccupancy(occupancyTransition);
         telemetryIngestionStateRepository.save(state);
         return decision;
     }
 
-    private TelemetryDeliveryDecision decideSequence(
+    private TelemetryDeliveryDecision decideDelivery(
             TelemetryIngestionState state,
-            Dht22Payload payload
+            Dht22Payload payload,
+            String eventKey
     ) {
-        if (!telemetryPayloadValidator.hasReliableIdentity(payload)) {
-            return TelemetryDeliveryDecision.LEGACY_BYPASS;
+        if (telemetryOutboxRepository.existsByEventKey(eventKey)) {
+            return TelemetryDeliveryDecision.DUPLICATE;
         }
         if (state.getActiveBootId() == null || state.getLastSequenceNo() == null) {
-            return TelemetryDeliveryDecision.ACCEPTED;
+            return TelemetryDeliveryDecision.ACCEPTED_CURRENT;
         }
+
         if (!state.getActiveBootId().equals(payload.getBootId())) {
-            log.info("새 telemetry boot session을 수신했습니다. nodeId={}, previousBootId={}, bootId={}",
-                    state.getNodeId(), state.getActiveBootId(), payload.getBootId());
-            return TelemetryDeliveryDecision.ACCEPTED;
+            if (state.getLastObservedAt() == null || payload.getObservedAt().isAfter(state.getLastObservedAt())) {
+                log.info("새 telemetry boot session을 수신했습니다. nodeId={}, previousBootId={}, bootId={}",
+                        state.getNodeId(), state.getActiveBootId(), payload.getBootId());
+                return TelemetryDeliveryDecision.ACCEPTED_CURRENT;
+            }
+            return TelemetryDeliveryDecision.ACCEPTED_LATE;
         }
 
         int comparison = payload.getSequenceNo().compareTo(state.getLastSequenceNo());
@@ -101,20 +117,38 @@ public class Dht22IngestionService {
             return TelemetryDeliveryDecision.DUPLICATE;
         }
         if (comparison < 0) {
-            return TelemetryDeliveryDecision.OUT_OF_ORDER;
+            return TelemetryDeliveryDecision.ACCEPTED_LATE;
+        }
+        if (state.getLastObservedAt() != null && !payload.getObservedAt().isAfter(state.getLastObservedAt())) {
+            return TelemetryDeliveryDecision.ACCEPTED_LATE;
         }
         if (payload.getSequenceNo() > state.getLastSequenceNo() + 1) {
             log.warn("telemetry sequence gap을 확인했습니다. nodeId={}, bootId={}, previous={}, incoming={}",
                     state.getNodeId(), payload.getBootId(), state.getLastSequenceNo(), payload.getSequenceNo());
         }
-        return TelemetryDeliveryDecision.ACCEPTED;
+        return TelemetryDeliveryDecision.ACCEPTED_CURRENT;
     }
 
     private String eventKey(String nodeId, Dht22Payload payload) {
-        if (telemetryPayloadValidator.hasReliableIdentity(payload)) {
-            return nodeId + "|" + payload.getBootId() + "|" + payload.getSequenceNo();
-        }
-        return "legacy|" + nodeId + "|" + UUID.randomUUID();
+        return nodeId + "|" + payload.getBootId() + "|" + payload.getSequenceNo();
+    }
+
+    private void saveOutbox(
+            String eventKey,
+            String nodeId,
+            Dht22Payload payload,
+            Instant receivedAt,
+            TelemetryPointPayload pointPayload
+    ) {
+        telemetryOutboxRepository.save(new TelemetryOutbox(
+                eventKey,
+                nodeId,
+                payload.getBootId(),
+                payload.getSequenceNo(),
+                receivedAt,
+                serialize(pointPayload),
+                TelemetryPointPayload.SCHEMA_VERSION
+        ));
     }
 
     private String serialize(TelemetryPointPayload pointPayload) {

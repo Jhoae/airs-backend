@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
@@ -56,7 +57,12 @@ public class Dht22SnapshotUpdateService {
 
     // 이미 계산한 재실 결과를 재사용해 최신 snapshot을 트랜잭션으로 갱신합니다.
     @Transactional
-    public void updateLatestSnapshot(String nodeId, Dht22Payload payload, OccupancyFusionResult occupancy) {
+    public void updateLatestSnapshot(
+            String nodeId,
+            Dht22Payload payload,
+            OccupancyFusionResult occupancy,
+            Instant receivedAt
+    ) {
         // 현재 이 노드가 설치된 활성 공간을 조회합니다.
         NodeInstallation installation = findActiveInstallation(nodeId);
         // 설치되지 않은 노드는 사용자 화면용 snapshot 갱신 대상이 아닙니다.
@@ -65,7 +71,7 @@ public class Dht22SnapshotUpdateService {
         }
 
         // 수신 서비스에서 계산한 재실 결과로 두 snapshot을 갱신합니다.
-        updateSnapshot(installation, payload, occupancy);
+        updateSnapshot(installation, payload, occupancy, receivedAt);
     }
 
     // 노드에 연결된 활성 설치 정보를 조회합니다.
@@ -84,22 +90,24 @@ public class Dht22SnapshotUpdateService {
     private void updateSnapshot(
             NodeInstallation installation,
             Dht22Payload payload,
-            OccupancyFusionResult occupancy
+            OccupancyFusionResult occupancy,
+            Instant receivedAt
     ) {
-        // UTC Instant 수신 시각을 서비스 화면과 같은 한국 시간 LocalDateTime으로 변환합니다.
-        LocalDateTime receivedAt = LocalDateTime.ofInstant(payload.getTimestamp(), SERVICE_ZONE);
+        LocalDateTime observedAtLocal = LocalDateTime.ofInstant(payload.getObservedAt(), SERVICE_ZONE);
+        LocalDateTime receivedAtLocal = LocalDateTime.ofInstant(receivedAt, SERVICE_ZONE);
         // 노드 연결·센서 상태 snapshot을 최신 telemetry로 갱신합니다.
-        updateNodeStatus(installation.getNode(), payload, occupancy, receivedAt);
+        updateNodeStatus(installation.getNode(), payload, occupancy, observedAtLocal, receivedAtLocal);
         // telemetry가 실제로 보낸 Wi-Fi RSSI로 약함 정보 알림을 즉시 동기화합니다.
-        weakWifiAlertService.sync(installation, payload.getWifiSignalDbm(), receivedAt);
+        weakWifiAlertService.sync(installation, payload.getWifiSignalDbm(), receivedAtLocal);
         // 연결된 공간의 환경·재실·AI 평가 snapshot을 최신 telemetry로 갱신합니다.
-        updateSpaceStatus(installation, payload, occupancy, receivedAt);
+        updateSpaceStatus(installation, payload, occupancy, observedAtLocal, receivedAtLocal);
     }
 
     private void updateNodeStatus(
             AirsNode node,
             Dht22Payload payload,
             OccupancyFusionResult occupancy,
+            LocalDateTime observedAt,
             LocalDateTime receivedAt
     ) {
         // DHT22 상태 문자열을 DB 길이에 맞게 정규화합니다.
@@ -114,6 +122,7 @@ public class Dht22SnapshotUpdateService {
         nodeStatusSnapshotRepository.findByNode_Id(node.getId())
                 .ifPresentOrElse(
                         nodeStatus -> nodeStatus.markSensorReceived(
+                                observedAt,
                                 receivedAt,
                                 sensorStatus,
                                 dht22Status,
@@ -130,7 +139,8 @@ public class Dht22SnapshotUpdateService {
                                 payload.getWifiSignalDbm(),
                                 occupancy.humanDetected(),
                                 receivedAt,
-                                receivedAt
+                                receivedAt,
+                                observedAt
                         ))
                 );
     }
@@ -149,6 +159,7 @@ public class Dht22SnapshotUpdateService {
             NodeInstallation installation,
             Dht22Payload payload,
             OccupancyFusionResult occupancy,
+            LocalDateTime observedAt,
             LocalDateTime receivedAt
     ) {
         // 화면과 DB에서 일정한 소수 둘째 자리로 온도를 저장합니다.
@@ -166,7 +177,7 @@ public class Dht22SnapshotUpdateService {
                 .ifPresentOrElse(
                         spaceStatus -> {
                             // 다른 노드의 더 최신 telemetry가 이미 공간을 갱신했다면 과거 값으로 되돌리지 않습니다.
-                            if (!spaceStatus.isNewerThan(receivedAt)) {
+                            if (!spaceStatus.isNewerThan(observedAt)) {
                                 updateExistingSpaceStatus(
                                         spaceStatus,
                                         installation,
@@ -174,6 +185,7 @@ public class Dht22SnapshotUpdateService {
                                         humidity,
                                         payload,
                                         occupancy,
+                                        observedAt,
                                         receivedAt
                                 );
                             }
@@ -184,6 +196,7 @@ public class Dht22SnapshotUpdateService {
                                 humidity,
                                 payload,
                                 occupancy,
+                                observedAt,
                                 receivedAt
                         ))
                 );
@@ -195,6 +208,7 @@ public class Dht22SnapshotUpdateService {
             BigDecimal humidity,
             Dht22Payload payload,
             OccupancyFusionResult occupancy,
+            LocalDateTime observedAt,
             LocalDateTime receivedAt
     ) {
         // 현재 환경값과 재실 결과를 담은 공간 최신 상태 엔티티를 생성합니다.
@@ -207,6 +221,7 @@ public class Dht22SnapshotUpdateService {
                 occupancy.sourcePresent() ? occupancy.humanDetected() : null,
                 occupancy.sourcePresent() ? occupancy.occupancyStatus() : null,
                 null,
+                observedAt,
                 receivedAt
         );
         // 새 공간 상태에도 comfort·CO2 요약 평가를 채웁니다.
@@ -222,6 +237,7 @@ public class Dht22SnapshotUpdateService {
             BigDecimal humidity,
             Dht22Payload payload,
             OccupancyFusionResult occupancy,
+            LocalDateTime observedAt,
             LocalDateTime receivedAt
     ) {
         // 이번 telemetry에 재실 판단 근거가 있으면 재실 field까지 함께 갱신합니다.
@@ -233,6 +249,7 @@ public class Dht22SnapshotUpdateService {
                     payload.getCo2Ppm(),
                     occupancy.humanDetected(),
                     occupancy.occupancyStatus(),
+                    observedAt,
                     receivedAt
             );
             // 갱신된 센서값으로 comfort·CO2 요약 평가를 다시 계산합니다.
@@ -247,6 +264,7 @@ public class Dht22SnapshotUpdateService {
                 temperature,
                 humidity,
                 payload.getCo2Ppm(),
+                observedAt,
                 receivedAt
         );
         // 환경값 갱신 후 comfort·CO2 요약 평가를 다시 계산합니다.

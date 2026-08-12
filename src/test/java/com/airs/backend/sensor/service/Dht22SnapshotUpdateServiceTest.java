@@ -136,9 +136,11 @@ class Dht22SnapshotUpdateServiceTest {
         givenPayloadAssembly(fixture, payload, occupancy);
         givenAiEvaluation(82, "쾌적", Co2Status.NORMAL);
 
-        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload, occupancy);
+        Instant receivedInstant = timestamp.plusSeconds(15);
+        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload, occupancy, receivedInstant);
 
-        LocalDateTime receivedAt = LocalDateTime.ofInstant(timestamp, ZoneId.of("Asia/Seoul"));
+        LocalDateTime observedAt = LocalDateTime.ofInstant(timestamp, ZoneId.of("Asia/Seoul"));
+        LocalDateTime receivedAt = LocalDateTime.ofInstant(receivedInstant, ZoneId.of("Asia/Seoul"));
         assertEquals(ConnectionStatus.ONLINE, nodeStatus.getConnectionStatus());
         assertEquals(SensorStatus.ABNORMAL, nodeStatus.getSensorStatus());
         assertEquals("OK", nodeStatus.getDht22Status());
@@ -147,12 +149,14 @@ class Dht22SnapshotUpdateServiceTest {
         assertEquals(true, nodeStatus.getHumanDetected());
         assertEquals(receivedAt, nodeStatus.getLastSeenAt());
         assertEquals(receivedAt, nodeStatus.getLastSensorReceivedAt());
+        assertEquals(observedAt, nodeStatus.getLastSensorObservedAt());
         assertEquals(new BigDecimal("21.12"), spaceStatus.getTemperature());
         assertEquals(new BigDecimal("63.46"), spaceStatus.getHumidity());
         assertNull(spaceStatus.getCo2Ppm());
         assertEquals(true, spaceStatus.getHumanDetected());
         assertEquals(OccupancyStatus.OCCUPIED, spaceStatus.getOccupancyStatus());
-        assertEquals(receivedAt, spaceStatus.getLastUpdatedAt());
+        assertEquals(observedAt, spaceStatus.getLastUpdatedAt());
+        assertEquals(receivedAt, spaceStatus.getLastReceivedAt());
         assertEquals(new BigDecimal("82.00"), spaceStatus.getComfortScore());
         assertEquals("쾌적", spaceStatus.getComfortSummary());
         assertEquals("보통", spaceStatus.getCo2Summary());
@@ -183,7 +187,12 @@ class Dht22SnapshotUpdateServiceTest {
         givenPayloadAssembly(fixture, payload, occupancy);
         givenAiEvaluation(76, "보통", Co2Status.NORMAL);
 
-        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload, occupancy);
+        dht22SnapshotUpdateService.updateLatestSnapshot(
+                "node_01",
+                payload,
+                occupancy,
+                payload.getObservedAt().plusSeconds(1)
+        );
 
         verify(nodeStatusSnapshotRepository).save(org.mockito.ArgumentMatchers.any(NodeStatusSnapshot.class));
         verify(spaceStatusSnapshotRepository).save(org.mockito.ArgumentMatchers.any(SpaceStatusSnapshot.class));
@@ -234,7 +243,12 @@ class Dht22SnapshotUpdateServiceTest {
         givenPayloadAssembly(fixture, payload, occupancy);
         givenAiEvaluation(65, "보통", Co2Status.NORMAL);
 
-        dht22SnapshotUpdateService.updateLatestSnapshot("node_01", payload, occupancy);
+        dht22SnapshotUpdateService.updateLatestSnapshot(
+                "node_01",
+                payload,
+                occupancy,
+                payload.getObservedAt().plusSeconds(1)
+        );
 
         assertEquals(-58, nodeStatus.getWifiRssi());
         assertEquals(true, nodeStatus.getHumanDetected());
@@ -266,7 +280,8 @@ class Dht22SnapshotUpdateServiceTest {
                         null,
                         null,
                         false
-                )
+                ),
+                payload.getObservedAt().plusSeconds(1)
         );
 
         verifyNoInteractions(nodeStatusSnapshotRepository, spaceStatusSnapshotRepository);

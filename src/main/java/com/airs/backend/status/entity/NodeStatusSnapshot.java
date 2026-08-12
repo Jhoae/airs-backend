@@ -60,6 +60,9 @@ public class NodeStatusSnapshot {
     @Column(name = "last_sensor_received_at")
     private LocalDateTime lastSensorReceivedAt;
 
+    @Column(name = "last_sensor_observed_at")
+    private LocalDateTime lastSensorObservedAt;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -79,6 +82,7 @@ public class NodeStatusSnapshot {
         this.humanDetected = humanDetected;
         this.lastSeenAt = lastSeenAt;
         this.lastSensorReceivedAt = lastSensorReceivedAt;
+        this.lastSensorObservedAt = lastSensorReceivedAt;
     }
 
     public NodeStatusSnapshot(
@@ -92,9 +96,36 @@ public class NodeStatusSnapshot {
             LocalDateTime lastSeenAt,
             LocalDateTime lastSensorReceivedAt
     ) {
+        this(
+                node,
+                connectionStatus,
+                sensorStatus,
+                dht22Status,
+                scd41Status,
+                wifiRssi,
+                humanDetected,
+                lastSeenAt,
+                lastSensorReceivedAt,
+                lastSensorReceivedAt
+        );
+    }
+
+    public NodeStatusSnapshot(
+            AirsNode node,
+            ConnectionStatus connectionStatus,
+            SensorStatus sensorStatus,
+            String dht22Status,
+            String scd41Status,
+            Integer wifiRssi,
+            Boolean humanDetected,
+            LocalDateTime lastSeenAt,
+            LocalDateTime lastSensorReceivedAt,
+            LocalDateTime lastSensorObservedAt
+    ) {
         this(node, connectionStatus, sensorStatus, wifiRssi, humanDetected, lastSeenAt, lastSensorReceivedAt);
         this.dht22Status = dht22Status;
         this.scd41Status = scd41Status;
+        this.lastSensorObservedAt = lastSensorObservedAt;
     }
 
     public void resetAfterRegistration(Integer wifiRssi) {
@@ -106,6 +137,7 @@ public class NodeStatusSnapshot {
         this.humanDetected = null;
         this.lastSeenAt = null;
         this.lastSensorReceivedAt = null;
+        this.lastSensorObservedAt = null;
     }
 
     public void markOffline() {
@@ -134,6 +166,26 @@ public class NodeStatusSnapshot {
             Integer wifiRssi,
             Boolean humanDetected
     ) {
+        markSensorReceived(
+                receivedAt,
+                receivedAt,
+                sensorStatus,
+                dht22Status,
+                scd41Status,
+                wifiRssi,
+                humanDetected
+        );
+    }
+
+    public void markSensorReceived(
+            LocalDateTime observedAt,
+            LocalDateTime receivedAt,
+            SensorStatus sensorStatus,
+            String dht22Status,
+            String scd41Status,
+            Integer wifiRssi,
+            Boolean humanDetected
+    ) {
         this.connectionStatus = ConnectionStatus.ONLINE;
         this.sensorStatus = sensorStatus;
         this.dht22Status = dht22Status;
@@ -142,6 +194,7 @@ public class NodeStatusSnapshot {
         this.humanDetected = humanDetected;
         this.lastSeenAt = receivedAt;
         this.lastSensorReceivedAt = receivedAt;
+        this.lastSensorObservedAt = observedAt;
     }
 
     @PrePersist

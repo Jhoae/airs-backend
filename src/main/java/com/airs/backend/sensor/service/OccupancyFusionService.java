@@ -18,7 +18,7 @@ public class OccupancyFusionService {
 
     // 입력 상태를 직접 바꾸지 않고 결과와 다음 상태를 함께 반환해 transaction rollback에 안전하게 만든다.
     public OccupancyFusionTransition resolve(Dht22Payload payload, OccupancyFusionMemory current) {
-        if (payload == null || payload.getTimestamp() == null) {
+        if (payload == null || payload.getObservedAt() == null) {
             return new OccupancyFusionTransition(unknown(false), current);
         }
 
@@ -29,7 +29,7 @@ public class OccupancyFusionService {
             return new OccupancyFusionTransition(unknown(false), current);
         }
 
-        Instant now = payload.getTimestamp();
+        Instant now = payload.getObservedAt();
         boolean pirDetected = isDetected(pir);
         boolean mmwaveDetected = isDetected(mmwave);
         boolean pirConfirmed = pirDetected && Boolean.TRUE.equals(current.previousPir());

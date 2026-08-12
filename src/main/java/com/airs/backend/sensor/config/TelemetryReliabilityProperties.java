@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "sensor.telemetry.reliability")
 public class TelemetryReliabilityProperties {
 
+    private long maxFutureSkewMillis = 120_000;
     private long mysqlRetryInitialBackoffMillis = 100;
     private long mysqlRetryMaximumBackoffMillis = 5_000;
     // 격리 staging에서 commit과 ACK 사이 강제 종료를 재현하기 위한 지연값이며 운영 기본은 0이다.

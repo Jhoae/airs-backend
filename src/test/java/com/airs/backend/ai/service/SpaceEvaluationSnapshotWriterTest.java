@@ -58,6 +58,7 @@ class SpaceEvaluationSnapshotWriterTest {
     @Test
     void write_should_update_existing_space_status_snapshot() {
         NodeInstallation installation = installation();
+        LocalDateTime previousReceivedAt = LocalDateTime.parse("2026-07-09T10:30:02");
         SpaceStatusSnapshot snapshot = new SpaceStatusSnapshot(
                 installation.getSpace(),
                 installation.getNode(),
@@ -67,7 +68,8 @@ class SpaceEvaluationSnapshotWriterTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                previousReceivedAt
         );
         Dht22Payload payload = new Dht22Payload(24.345, 52.789, 1128, Instant.parse("2026-07-09T01:30:00Z"));
         SpaceEvaluationResult result = result(74, "보통", Co2Status.WARNING, OccupancyState.PRESENT);
@@ -85,6 +87,7 @@ class SpaceEvaluationSnapshotWriterTest {
         assertEquals("보통", snapshot.getComfortSummary());
         assertEquals("주의", snapshot.getCo2Summary());
         assertEquals("보통", snapshot.getSpaceSummary());
+        assertEquals(previousReceivedAt, snapshot.getLastReceivedAt());
         verify(spaceStatusSnapshotRepository, never()).save(any());
     }
 
@@ -111,6 +114,7 @@ class SpaceEvaluationSnapshotWriterTest {
         assertEquals(new BigDecimal("88.00"), saved.getComfortScore());
         assertEquals("쾌적", saved.getComfortSummary());
         assertEquals("좋음", saved.getCo2Summary());
+        assertNull(saved.getLastReceivedAt());
     }
 
     private SpaceEvaluationResult result(

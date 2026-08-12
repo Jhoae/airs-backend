@@ -98,13 +98,18 @@ public class InfluxDht22Writer {
         asyncWriteApi.writePoint(point);
     }
 
-    private Point toPoint(TelemetryPointPayload payload) {
+    Point toPoint(TelemetryPointPayload payload) {
         Point point = Point.measurement(influxProperties.getMeasurement())
                 .addTag(influxProperties.getNodeIdTag(), payload.nodeId())
                 .addField("temperature_c", payload.temperature())
                 .addField("humidity_pct", payload.humidity())
-                // 같은 node의 서로 다른 event가 같은 millisecond에 도착해 한 point로 합쳐지지 않게 한다.
-                .time(payload.receivedAt(), WritePrecision.NS);
+                .addField("boot_id", payload.bootId())
+                .addField("sequence_no", payload.sequenceNo())
+                .addField("received_at_epoch_ms", payload.receivedAt().toEpochMilli())
+                .addField("ingest_delay_ms", payload.ingestDelayMillis())
+                .addField("delivery_decision", payload.deliveryDecision())
+                // 센서 그래프와 변화량은 서버 도착 시각이 아닌 실제 측정 시각을 사용한다.
+                .time(payload.observedAt(), WritePrecision.NS);
 
         addField(point, "co2_ppm", payload.co2Ppm() == null ? null : payload.co2Ppm().doubleValue());
         addField(point, "scd41_temperature_c", payload.scd41Temperature());

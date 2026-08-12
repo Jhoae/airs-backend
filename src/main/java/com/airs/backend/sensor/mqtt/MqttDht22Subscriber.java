@@ -130,7 +130,7 @@ public class MqttDht22Subscriber {
             String nodeId = extractNodeId(topic);
             // JSON 필드 별칭을 반영해 센서 telemetry DTO를 생성합니다.
             Dht22Payload payload = objectMapper.readValue(payloadJson, Dht22Payload.class);
-            telemetryPayloadValidator.validateAndStamp(nodeId, payload, receivedAt);
+            telemetryPayloadValidator.validate(nodeId, payload, receivedAt);
             // ACK 책임까지 worker에 넘겨 MySQL transaction commit 뒤에만 broker에 완료를 알립니다.
             telemetryIngestionDispatcher.dispatch(new TelemetryIngestionCommand(
                     nodeId,

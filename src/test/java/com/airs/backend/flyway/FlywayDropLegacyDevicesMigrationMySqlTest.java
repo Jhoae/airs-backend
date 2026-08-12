@@ -37,6 +37,7 @@ class FlywayDropLegacyDevicesMigrationMySqlTest {
 			.dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
 			.baselineOnMigrate(true)
 			.baselineVersion("1")
+			.target("2")
 			.locations("classpath:db/migration")
 			.load();
 
@@ -47,7 +48,7 @@ class FlywayDropLegacyDevicesMigrationMySqlTest {
 			assertThat(tableExists(statement, "devices")).isFalse();
 			assertThat(countFlywayHistory(statement, "1", "BASELINE")).isEqualTo(1);
 			assertThat(countFlywayHistory(statement, "2", "SQL")).isEqualTo(1);
-			assertThat(countFlywayHistory(statement, "3", "SQL")).isEqualTo(1);
+			assertThat(countFlywayHistory(statement, "3", "SQL")).isZero();
 		}
 	}
 

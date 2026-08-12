@@ -36,26 +36,15 @@ node_01
 
 그럼에도 펌웨어 재시도, 브리지 재발행, 향후 QoS 1 발행으로 같은 telemetry가 다시 들어올 수 있으므로 소비자는 멱등성을 준비해야 한다. MySQL 최신 snapshot은 같은 노드 행을 갱신하므로 값이 크게 누적되지는 않지만, `OccupancyFusionService`의 연속 PIR·마지막 움직임 이력은 같은 메시지를 두 번 처리하면 판정에 영향을 받을 수 있다.
 
-### 메시지 식별자와 durable 처리 상태
+### event time과 durable 처리 상태
 
-펌웨어 payload에 `boot_id`와 `sequence_no`를 추가한다. `boot_id`는 기기가 켜질 때마다 새로 만드는 식별자이고, `sequence_no`는 그 부팅 동안 telemetry마다 1씩 증가한다. 예시는 다음과 같다.
+종료된 프로젝트의 backend 계약을 MQTT telemetry v2로 정리했다. `boot_id`, `sequence_no`, `observed_at`은 모두 필수이며 legacy payload는 더 이상 허용하지 않는다. 센서가 측정한 `observed_at`은 InfluxDB 시간축과 변화량 계산에 사용하고, Spring callback이 만든 `received_at`은 연결 상태와 수집 지연을 판단하는 processing time으로 사용한다.
 
-```json
-{
-  "node_id": "node_01",
-  "boot_id": "7f3a9c2e",
-  "sequence_no": 1842,
-  "temperature_c": 24.3,
-  "humidity_pct": 53.2,
-  "co2_ppm": 842
-}
-```
+Redis에 sequence를 먼저 기록하면 이후 MySQL transaction이 rollback되어도 재전송이 duplicate로 오판될 수 있다. 따라서 node별 `telemetry_ingestion_states` row를 `FOR UPDATE`로 잠그고, 동일 transaction 안에서 `boot_id + sequence_no` 순서 판정과 `telemetry_outbox.event_key` 멱등성 검사를 수행한다. current telemetry만 occupancy, 최신 snapshot, 실시간 alert의 입력이 되고, 늦게 도착한 고유 telemetry는 raw outbox에만 남는다.
 
-Redis sequence를 먼저 갱신하면 이후 MySQL 저장이 실패해도 재전송 메시지가 duplicate로 차단될 수 있다. 현재는 node별 `telemetry_ingestion_states` row를 MySQL transaction 안에서 잠그고 `boot_id + sequence_no`를 비교한다. 같은 transaction이 occupancy 상태와 최신 snapshot을 갱신하고 immutable `telemetry_outbox`를 저장한 뒤 commit되어야 ACK한다. 따라서 rollback된 sequence가 처리 완료로 남지 않는다.
+InfluxDB 전달은 transaction 이후 outbox publisher가 담당한다. 성공하면 outbox를 `COMPLETED`, 실패하면 `RETRY`로 변경한다. 완료 outbox는 제한된 기간 후 정리하므로 dedup metadata가 무한 증가하지 않지만, 보관 기간이 지난 매우 오래된 재전송까지 영구 차단하지는 않는다.
 
-InfluxDB 전달은 transaction 뒤 별도 publisher가 담당한다. blocking write가 성공하면 outbox를 `COMPLETED`, 실패하면 `RETRY`로 바꾸며 Spring 재시작 후에도 남은 row를 다시 조회한다. 이 구조는 MySQL과 InfluxDB를 분산 transaction으로 묶지 않고, MySQL에 확정된 point projection을 재전달하는 방식이다.
-
-`nodeId + sequence_no`만 쓰면 기기 재부팅 후 sequence가 0부터 다시 시작할 때 이전 이벤트와 충돌할 수 있으므로 `boot_id`를 함께 사용한다. 두 값 중 하나라도 없는 legacy payload는 계속 수신하지만 정확한 멱등성과 순서를 보장하지 않는 best-effort 경로로 분리한다. 장치 측정 timestamp가 없으므로 이전 boot가 뒤늦게 재등장한 경우의 절대 순서도 복원할 수 없다.
+계약, current/late/duplicate 판정표, boot session 정책, 멱등성 보장 범위와 테스트 근거는 [MQTT_TELEMETRY_V2.md](MQTT_TELEMETRY_V2.md)를 기준 문서로 사용한다.
 
 ### MQTT 보안 강화 순서
 

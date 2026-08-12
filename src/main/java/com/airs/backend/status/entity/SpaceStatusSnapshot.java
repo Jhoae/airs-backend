@@ -84,6 +84,9 @@ public class SpaceStatusSnapshot {
     @Column(name = "last_updated_at")
     private LocalDateTime lastUpdatedAt;
 
+    @Column(name = "last_received_at")
+    private LocalDateTime lastReceivedAt;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -98,6 +101,32 @@ public class SpaceStatusSnapshot {
             BigDecimal comfortScore,
             LocalDateTime lastUpdatedAt
     ) {
+        this(
+                space,
+                representativeNode,
+                temperature,
+                humidity,
+                co2Ppm,
+                humanDetected,
+                occupancyStatus,
+                comfortScore,
+                lastUpdatedAt,
+                lastUpdatedAt
+        );
+    }
+
+    public SpaceStatusSnapshot(
+            Space space,
+            AirsNode representativeNode,
+            BigDecimal temperature,
+            BigDecimal humidity,
+            Integer co2Ppm,
+            Boolean humanDetected,
+            OccupancyStatus occupancyStatus,
+            BigDecimal comfortScore,
+            LocalDateTime lastUpdatedAt,
+            LocalDateTime lastReceivedAt
+    ) {
         this.space = space;
         this.representativeNode = representativeNode;
         this.temperature = temperature;
@@ -107,6 +136,7 @@ public class SpaceStatusSnapshot {
         this.occupancyStatus = occupancyStatus;
         this.comfortScore = comfortScore;
         this.lastUpdatedAt = lastUpdatedAt;
+        this.lastReceivedAt = lastReceivedAt;
     }
 
     public void changeRepresentativeNode(AirsNode representativeNode) {
@@ -120,13 +150,32 @@ public class SpaceStatusSnapshot {
             Integer co2Ppm,
             LocalDateTime lastUpdatedAt
     ) {
+        updateLatestSensorValues(
+                sourceNode,
+                temperature,
+                humidity,
+                co2Ppm,
+                lastUpdatedAt,
+                lastUpdatedAt
+        );
+    }
+
+    public void updateLatestSensorValues(
+            AirsNode sourceNode,
+            BigDecimal temperature,
+            BigDecimal humidity,
+            Integer co2Ppm,
+            LocalDateTime observedAt,
+            LocalDateTime receivedAt
+    ) {
         if (this.representativeNode == null) {
             this.representativeNode = sourceNode;
         }
         this.temperature = temperature;
         this.humidity = humidity;
         this.co2Ppm = co2Ppm;
-        this.lastUpdatedAt = lastUpdatedAt;
+        this.lastUpdatedAt = observedAt;
+        this.lastReceivedAt = receivedAt;
     }
 
     public void updateLatestSensorValues(
@@ -144,6 +193,22 @@ public class SpaceStatusSnapshot {
         this.occupancySummary = toOccupancySummary(occupancyStatus);
     }
 
+    public void updateLatestSensorValues(
+            AirsNode sourceNode,
+            BigDecimal temperature,
+            BigDecimal humidity,
+            Integer co2Ppm,
+            Boolean humanDetected,
+            OccupancyStatus occupancyStatus,
+            LocalDateTime observedAt,
+            LocalDateTime receivedAt
+    ) {
+        updateLatestSensorValues(sourceNode, temperature, humidity, co2Ppm, observedAt, receivedAt);
+        this.humanDetected = humanDetected;
+        this.occupancyStatus = occupancyStatus;
+        this.occupancySummary = toOccupancySummary(occupancyStatus);
+    }
+
     public void updateAiEvaluation(
             BigDecimal comfortScore,
             String comfortSummary,
@@ -155,8 +220,8 @@ public class SpaceStatusSnapshot {
         this.spaceSummary = comfortSummary;
     }
 
-    public boolean isNewerThan(LocalDateTime receivedAt) {
-        return this.lastUpdatedAt != null && this.lastUpdatedAt.isAfter(receivedAt);
+    public boolean isNewerThan(LocalDateTime observedAt) {
+        return this.lastUpdatedAt != null && this.lastUpdatedAt.isAfter(observedAt);
     }
 
     private String toOccupancySummary(OccupancyStatus occupancyStatus) {

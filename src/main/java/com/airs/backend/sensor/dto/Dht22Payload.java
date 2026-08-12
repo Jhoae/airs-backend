@@ -52,21 +52,22 @@ public class Dht22Payload {
     // 같은 부팅 세션 안에서 증가하는 telemetry 순번을 읽는다.
     @JsonAlias("sequence_no")
     private Long sequenceNo;
-    // MQTT에 시각이 없을 때 수신 서비스가 보정한 원본 시각이다.
-    private Instant timestamp;
+    // 센서가 실제 측정한 event time을 ISO-8601 UTC Instant로 읽는다.
+    @JsonAlias("observed_at")
+    private Instant observedAt;
 
     // 기존 온습도 전용 입력을 만들기 위한 생성자다.
-    public Dht22Payload(Double temperature, Double humidity, Instant timestamp) {
+    public Dht22Payload(Double temperature, Double humidity, Instant observedAt) {
         // 온도 값을 저장한다.
         this.temperature = temperature;
         // 습도 값을 저장한다.
         this.humidity = humidity;
         // 측정 시각을 저장한다.
-        this.timestamp = timestamp;
+        this.observedAt = observedAt;
     }
 
     // 온습도와 CO2를 함께 가진 입력을 만들기 위한 생성자다.
-    public Dht22Payload(Double temperature, Double humidity, Integer co2Ppm, Instant timestamp) {
+    public Dht22Payload(Double temperature, Double humidity, Integer co2Ppm, Instant observedAt) {
         // 온도 값을 저장한다.
         this.temperature = temperature;
         // 습도 값을 저장한다.
@@ -74,7 +75,7 @@ public class Dht22Payload {
         // CO2 값을 저장한다.
         this.co2Ppm = co2Ppm;
         // 측정 시각을 저장한다.
-        this.timestamp = timestamp;
+        this.observedAt = observedAt;
     }
 
     // 중첩 상태 객체에서 DHT22 상태만 안전하게 꺼낸다.

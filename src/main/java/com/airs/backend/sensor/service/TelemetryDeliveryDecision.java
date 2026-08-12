@@ -1,14 +1,16 @@
 package com.airs.backend.sensor.service;
 
-// 한 MQTT telemetry를 현재 저장 경로로 통과시킬지 나타낸다.
+// MQTT telemetry가 raw 시계열과 최신 상태에 반영되는 범위를 나타낸다.
 public enum TelemetryDeliveryDecision {
-    ACCEPTED,
-    DUPLICATE,
-    OUT_OF_ORDER,
-    LEGACY_BYPASS;
+    ACCEPTED_CURRENT,
+    ACCEPTED_LATE,
+    DUPLICATE;
 
-    // ACCEPTED와 호환 payload는 이후 재실·저장 처리를 계속한다.
-    public boolean shouldIngest() {
-        return this == ACCEPTED || this == LEGACY_BYPASS;
+    public boolean writesRaw() {
+        return this != DUPLICATE;
+    }
+
+    public boolean updatesCurrentState() {
+        return this == ACCEPTED_CURRENT;
     }
 }

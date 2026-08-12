@@ -36,20 +36,20 @@ public class SpaceEvaluationSnapshotWriter {
             Dht22Payload payload,
             SpaceEvaluationResult result
     ) {
-        // Influx Instant를 MySQL DATETIME에 저장할 한국 서비스 기준 시각으로 변환한다.
-        LocalDateTime receivedAt = LocalDateTime.ofInstant(payload.getTimestamp(), SERVICE_ZONE);
+        // Influx point의 센서 측정 시각을 MySQL DATETIME에 저장할 한국 서비스 기준 시각으로 변환한다.
+        LocalDateTime observedAt = LocalDateTime.ofInstant(payload.getObservedAt(), SERVICE_ZONE);
 
         // 같은 space에는 snapshot 한 행만 존재해야 하므로 space_id로 먼저 찾는다.
         spaceStatusSnapshotRepository.findBySpace_Id(installation.getSpace().getId())
                 .ifPresentOrElse(
                         // 행이 있으면 예: K301의 temperature/humidity/co2/comfort 값을 최신 telemetry로 갱신한다.
-                        snapshot -> updateSnapshot(snapshot, installation, payload, result, receivedAt),
+                        snapshot -> updateSnapshot(snapshot, installation, payload, result, observedAt),
                         // 처음 설치된 공간이면 센서 최신값과 평가 결과를 가진 새 행을 INSERT한다.
                         () -> spaceStatusSnapshotRepository.save(createSnapshot(
                                 installation,
                                 payload,
                                 result,
-                                receivedAt
+                                observedAt
                         ))
                 );
     }
@@ -58,7 +58,7 @@ public class SpaceEvaluationSnapshotWriter {
             NodeInstallation installation,
             Dht22Payload payload,
             SpaceEvaluationResult result,
-            LocalDateTime receivedAt
+            LocalDateTime observedAt
     ) {
         // 생성자는 space, 대표 node, 현재 측정값, 재실 상태, 수신 시각을 초기화한다.
         SpaceStatusSnapshot snapshot = new SpaceStatusSnapshot(
@@ -78,8 +78,10 @@ public class SpaceEvaluationSnapshotWriter {
                 toOccupancyStatus(result),
                 // 이 단계에서는 별도 예약 컬럼을 사용하지 않는다.
                 null,
-                // 실제 telemetry가 수신된 시각
-                receivedAt
+                // InfluxDB에서 읽은 실제 센서 측정 시각
+                observedAt,
+                // Influx 조회 결과에는 Spring 최초 수신 시각이 없으므로 값을 추측하지 않는다.
+                null
         );
         // INSERT 직전 comfortScore, comfortSummary, co2Summary도 같은 snapshot 행에 채운다.
         updateAiEvaluation(snapshot, result);
@@ -91,7 +93,7 @@ public class SpaceEvaluationSnapshotWriter {
             NodeInstallation installation,
             Dht22Payload payload,
             SpaceEvaluationResult result,
-            LocalDateTime receivedAt
+            LocalDateTime observedAt
     ) {
         // 기존 snapshot 행의 대표 노드와 최신 센서 필드만 telemetry 기준으로 바꾼다.
         snapshot.updateLatestSensorValues(
@@ -101,7 +103,9 @@ public class SpaceEvaluationSnapshotWriter {
                 payload.getCo2Ppm(),
                 toHumanDetected(result),
                 toOccupancyStatus(result),
-                receivedAt
+                observedAt,
+                // AI 재평가는 새 MQTT 수신이 아니므로 기존 processing time을 보존한다.
+                snapshot.getLastReceivedAt()
         );
         // 센서 값 갱신과 같은 트랜잭션에서 평가 요약 필드도 일관되게 갱신한다.
         updateAiEvaluation(snapshot, result);

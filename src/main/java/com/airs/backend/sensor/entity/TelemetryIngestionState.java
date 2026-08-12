@@ -30,6 +30,9 @@ public class TelemetryIngestionState {
     @Column(name = "last_sequence_no")
     private Long lastSequenceNo;
 
+    @Column(name = "last_observed_at")
+    private Instant lastObservedAt;
+
     @Column(name = "previous_pir")
     private Boolean previousPir;
 
@@ -53,11 +56,14 @@ public class TelemetryIngestionState {
         return new OccupancyFusionMemory(previousPir, lastMotionAt, noMotionStartedAt);
     }
 
-    public void acceptSequence(String bootId, Long sequenceNo, Instant receivedAt) {
-        if (bootId != null && sequenceNo != null) {
-            this.activeBootId = bootId;
-            this.lastSequenceNo = sequenceNo;
-        }
+    public void acceptCurrent(String bootId, Long sequenceNo, Instant observedAt, Instant receivedAt) {
+        this.activeBootId = bootId;
+        this.lastSequenceNo = sequenceNo;
+        this.lastObservedAt = observedAt;
+        this.lastReceivedAt = receivedAt;
+    }
+
+    public void markReceived(Instant receivedAt) {
         this.lastReceivedAt = receivedAt;
     }
 

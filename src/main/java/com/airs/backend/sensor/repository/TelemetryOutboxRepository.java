@@ -18,6 +18,8 @@ public interface TelemetryOutboxRepository extends JpaRepository<TelemetryOutbox
 
     Optional<TelemetryOutbox> findByEventKey(String eventKey);
 
+    boolean existsByEventKey(String eventKey);
+
     long countByStatus(TelemetryOutboxStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

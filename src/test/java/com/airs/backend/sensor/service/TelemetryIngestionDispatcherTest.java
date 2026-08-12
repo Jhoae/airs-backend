@@ -41,7 +41,7 @@ class TelemetryIngestionDispatcherTest {
         Dht22IngestionService ingestionService = Mockito.mock(Dht22IngestionService.class);
         doAnswer(invocation -> {
             sequenceNumbers.add(invocation.getArgument(1, Dht22Payload.class).getSequenceNo());
-            return TelemetryDeliveryDecision.ACCEPTED;
+            return TelemetryDeliveryDecision.ACCEPTED_CURRENT;
         }).when(ingestionService).ingest(eq("node_01"), any(Dht22Payload.class), any(Instant.class));
 
         dispatcher = dispatcher(ingestionService);
@@ -63,7 +63,7 @@ class TelemetryIngestionDispatcherTest {
             if (attempts.incrementAndGet() == 1) {
                 throw new IllegalStateException("forced internal failure");
             }
-            return TelemetryDeliveryDecision.ACCEPTED;
+            return TelemetryDeliveryDecision.ACCEPTED_CURRENT;
         }).when(ingestionService).ingest(eq("node_01"), any(Dht22Payload.class), any(Instant.class));
 
         dispatcher = dispatcher(ingestionService);
@@ -79,7 +79,7 @@ class TelemetryIngestionDispatcherTest {
         CountDownLatch completed = new CountDownLatch(1);
         List<Long> acknowledged = new CopyOnWriteArrayList<>();
         Dht22IngestionService ingestionService = Mockito.mock(Dht22IngestionService.class);
-        doAnswer(invocation -> TelemetryDeliveryDecision.ACCEPTED)
+        doAnswer(invocation -> TelemetryDeliveryDecision.ACCEPTED_CURRENT)
                 .when(ingestionService).ingest(eq("node_01"), any(Dht22Payload.class), any(Instant.class));
 
         dispatcher = dispatcher(ingestionService);
@@ -116,12 +116,13 @@ class TelemetryIngestionDispatcherTest {
         Dht22Payload payload = new Dht22Payload();
         payload.setTemperature(24.0);
         payload.setHumidity(50.0);
-        payload.setTimestamp(Instant.parse("2026-07-28T00:00:00Z"));
+        payload.setObservedAt(Instant.parse("2026-07-28T00:00:00Z"));
+        payload.setBootId("boot-a");
         payload.setSequenceNo(sequenceNo);
         return new TelemetryIngestionCommand(
                 "node_01",
                 payload,
-                payload.getTimestamp(),
+                Instant.parse("2026-07-28T00:00:01Z"),
                 (int) sequenceNo,
                 1,
                 () -> {

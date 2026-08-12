@@ -53,7 +53,10 @@ class FlywayInitialSchemaMySqlTest {
             assertThat(columnExists(statement, "campus_admins", "approved")).isFalse();
             assertThat(columnExists(statement, "campus_admins", "status")).isTrue();
             assertThat(columnType(statement, "alerts", "alert_type")).startsWith("varchar");
-            assertThat(successfulSqlMigrationCount(statement)).isEqualTo(5);
+            assertThat(columnExists(statement, "telemetry_ingestion_states", "last_observed_at")).isTrue();
+            assertThat(columnExists(statement, "node_status_snapshots", "last_sensor_observed_at")).isTrue();
+            assertThat(columnExists(statement, "space_status_snapshots", "last_received_at")).isTrue();
+            assertThat(successfulSqlMigrationCount(statement)).isEqualTo(6);
         }
     }
 

@@ -45,6 +45,7 @@ class FlywayCampusAdminStatusMigrationMySqlTest {
                 .dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
                 .baselineOnMigrate(true)
                 .baselineVersion("1")
+                .target("3")
                 .locations("classpath:db/migration")
                 .load();
 

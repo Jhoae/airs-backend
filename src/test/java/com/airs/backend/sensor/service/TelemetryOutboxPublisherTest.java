@@ -71,7 +71,12 @@ class TelemetryOutboxPublisherTest {
     private TelemetryOutbox outbox() throws Exception {
         TelemetryPointPayload point = new TelemetryPointPayload(
                 "node_01",
+                "boot-a",
+                42L,
+                Instant.parse("2026-08-02T09:59:59Z"),
                 Instant.parse("2026-08-02T10:00:00Z"),
+                1_000L,
+                "ACCEPTED_CURRENT",
                 24.3,
                 52.0,
                 812,

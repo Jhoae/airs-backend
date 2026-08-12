@@ -1,4 +1,4 @@
--- 이 파일은 V1~V4 migration 적용 후 AIRS MySQL의 최종 구조를 설명한다.
+-- 이 파일은 V1~V5 migration 적용 후 AIRS MySQL의 최종 구조를 설명한다.
 -- 신규 DB 생성과 스키마 변경은 이 파일을 직접 실행하지 않고 Flyway migration으로 수행한다.
 
 CREATE TABLE campuses (
@@ -181,3 +181,53 @@ CREATE TABLE alerts (
   CONSTRAINT fk_alerts_node
     FOREIGN KEY (node_id) REFERENCES airs_nodes (id)
 );
+
+-- MQTT telemetry의 node별 처리 완료 상태와 재실 계산 상태를 유지한다.
+CREATE TABLE telemetry_ingestion_states (
+  node_id VARCHAR(80) NOT NULL,
+  active_boot_id VARCHAR(64) NULL,
+  last_sequence_no BIGINT NULL,
+  previous_pir BIT(1) NULL,
+  last_motion_at DATETIME(6) NULL,
+  no_motion_started_at DATETIME(6) NULL,
+  last_received_at DATETIME(6) NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (node_id)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+-- MySQL에서 확정한 telemetry를 InfluxDB로 재전달하기 위한 짧은 수명의 outbox다.
+CREATE TABLE telemetry_outbox (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  event_key VARCHAR(200) NOT NULL,
+  node_id VARCHAR(80) NOT NULL,
+  boot_id VARCHAR(64) NULL,
+  sequence_no BIGINT NULL,
+  received_at DATETIME(6) NOT NULL,
+  point_payload_json LONGTEXT NOT NULL,
+  schema_version INT NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  retry_count INT NOT NULL,
+  next_retry_at DATETIME(6) NULL,
+  claimed_at DATETIME(6) NULL,
+  last_error VARCHAR(1000) NULL,
+  created_at DATETIME(6) NOT NULL,
+  completed_at DATETIME(6) NULL,
+  PRIMARY KEY (id),
+  CONSTRAINT uk_telemetry_outbox_event_key
+    UNIQUE (event_key),
+  INDEX idx_telemetry_outbox_pending (
+    status,
+    next_retry_at,
+    claimed_at,
+    id
+  ),
+  INDEX idx_telemetry_outbox_completed (
+    status,
+    completed_at,
+    id
+  )
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;

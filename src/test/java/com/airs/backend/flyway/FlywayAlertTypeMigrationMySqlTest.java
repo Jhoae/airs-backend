@@ -39,6 +39,7 @@ class FlywayAlertTypeMigrationMySqlTest {
                 .dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())
                 .baselineOnMigrate(true)
                 .baselineVersion("1")
+                .target("4")
                 .locations("classpath:db/migration")
                 .load();
 

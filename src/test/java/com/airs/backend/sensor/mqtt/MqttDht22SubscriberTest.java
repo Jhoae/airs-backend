@@ -19,6 +19,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import com.airs.backend.sensor.config.MqttProperties;
+import com.airs.backend.sensor.config.TelemetryReliabilityProperties;
 import com.airs.backend.sensor.dto.Dht22Payload;
 import com.airs.backend.sensor.service.TelemetryIngestionDispatcher;
 import com.airs.backend.sensor.service.TelemetryIngestionCommand;
@@ -46,7 +47,7 @@ class MqttDht22SubscriberTest {
                 mqttProperties,
                 new ObjectMapper().findAndRegisterModules(),
                 telemetryIngestionDispatcher,
-                new TelemetryPayloadValidator(),
+                new TelemetryPayloadValidator(new TelemetryReliabilityProperties()),
                 new SimpleMeterRegistry()
         );
         ReflectionTestUtils.setField(mqttDht22Subscriber, "mqttClient", mqttClient);
@@ -61,7 +62,7 @@ class MqttDht22SubscriberTest {
                   "co2_ppm": 842,
                   "boot_id": "boot-node-01",
                   "sequence_no": 42,
-                  "timestamp": "2026-04-10T10:00:00Z"
+                  "observed_at": "2026-04-10T10:00:00Z"
                 }
                 """;
         MqttMessage message = new MqttMessage(json.getBytes(StandardCharsets.UTF_8));
@@ -83,7 +84,7 @@ class MqttDht22SubscriberTest {
         assertEquals(842, payload.getCo2Ppm());
         assertEquals("boot-node-01", payload.getBootId());
         assertEquals(42L, payload.getSequenceNo());
-        assertEquals(commandCaptor.getValue().receivedAt(), payload.getTimestamp());
+        assertEquals(Instant.parse("2026-04-10T10:00:00Z"), payload.getObservedAt());
     }
 
     @Test
@@ -93,6 +94,9 @@ class MqttDht22SubscriberTest {
                   "temperature_c": 26.5,
                   "humidity_pct": 50.3,
                   "co2_ppm": 956,
+                  "boot_id": "boot-node-01",
+                  "sequence_no": 43,
+                  "observed_at": "2026-04-10T10:00:05Z",
                   "abc": "ignored"
                 }
                 """;
@@ -127,6 +131,9 @@ class MqttDht22SubscriberTest {
                   "pir_detected": 1,
                   "mmwave_detected": 0,
                   "wifi_signal_dbm": -58,
+                  "boot_id": "boot-node-01",
+                  "sequence_no": 44,
+                  "observed_at": "2026-04-10T10:00:10Z",
                   "sensor_status": {
                     "dht22": "OK",
                     "scd41": "OK"
@@ -171,7 +178,8 @@ class MqttDht22SubscriberTest {
     @Test
     void acknowledgment_should_be_deferred_until_dispatched_command_completes() throws Exception {
         String json = """
-                {"temperature_c": 24.3, "humidity_pct": 52.0, "boot_id": "boot-a", "sequence_no": 42}
+                {"temperature_c": 24.3, "humidity_pct": 52.0, "boot_id": "boot-a", "sequence_no": 42,
+                 "observed_at": "2026-04-10T10:00:00Z"}
                 """;
         MqttMessage message = new MqttMessage(json.getBytes(StandardCharsets.UTF_8));
         message.setId(77);
@@ -207,6 +215,26 @@ class MqttDht22SubscriberTest {
         );
 
         verify(mqttClient).messageArrivedComplete(78, 1);
+        org.mockito.Mockito.verifyNoInteractions(telemetryIngestionDispatcher);
+    }
+
+    @Test
+    void missing_observed_at_should_be_acknowledged_as_poison_message_without_dispatch() throws Exception {
+        String json = """
+                {"temperature_c": 24.3, "humidity_pct": 52.0, "boot_id": "boot-a", "sequence_no": 42}
+                """;
+        MqttMessage message = new MqttMessage(json.getBytes(StandardCharsets.UTF_8));
+        message.setId(79);
+        message.setQos(1);
+
+        ReflectionTestUtils.invokeMethod(
+                mqttDht22Subscriber,
+                "handleMessage",
+                "airs/node/node_01/telemetry",
+                message
+        );
+
+        verify(mqttClient).messageArrivedComplete(79, 1);
         org.mockito.Mockito.verifyNoInteractions(telemetryIngestionDispatcher);
     }
 }

@@ -92,6 +92,20 @@ Mosquitto dropped/error/denied 로그: 없음
 
 이는 1,000개의 가상 node identity가 5초 주기로 보낸 QoS 1 telemetry 24,000건을 현재 Spring 수집 경로가 MySQL transaction과 outbox를 거쳐 InfluxDB까지 전달했다는 증거다. 이 staging의 callback 종료·MySQL 중단·InfluxDB 중단 실험에서는 미확인 QoS 재전달과 재시작 후 outbox 복구도 확인했다. Raspberry Pi의 CPU·Wi-Fi·실제 펌웨어 QoS, broker 재시작 뒤 session persistence, 장기 지속 수집과 다중 Spring subscriber는 증명하지 않는다.
 
+## 2026-08-09 striped worker 수 비교
+
+8개를 임의의 상수로 두지 않기 위해 동일한 24,000건 조건에서 worker를 `1·2·4·8·16`개로 바꿔 한 차례씩 비교했다. 모든 조건에서 sequence gap·broker drop·DEAD 없이 24,000건이 MySQL과 InfluxDB에 반영됐다.
+
+| worker | 수신→outbox 생성 P95 | stripe 최대 queue | 발행 종료 뒤 backlog 해소 |
+|---:|---:|---:|---:|
+| 1 | 252ms | 19건 | 92초 |
+| 2 | 422ms | 19건 | 76초 |
+| 4 | 351ms | 14건 | 41초 |
+| 8 | 136ms | 8건 | 2초 |
+| 16 | 93ms | 5건 | 3초 |
+
+worker 16개는 수신 경로의 지연을 더 줄였지만 전체 InfluxDB 전달 완료는 8개보다 빨라지지 않았다. 8개는 worker 4개까지 남아 있던 backlog를 사실상 해소하면서, worker와 전용 queue를 다시 두 배로 늘리기 전의 가장 작은 값이었다. 따라서 현재 staging 부하의 균형점으로 기본값 8을 유지한다. 이는 로컬 Docker 조건의 설정 근거이며 모든 하드웨어의 보편적인 최적값이라는 뜻은 아니다.
+
 ## QoS 1 중복·순서 역전 검증
 
 `boot_id`와 `sequence_no`가 있을 때 Spring은 node별 MySQL ingestion state row를 transaction 안에서 잠그고 최대 순번을 비교합니다. `duplicate`는 같은 순번을 두 번 발행하고, `out-of-order`는 최신 순번 뒤에 직전 순번을 한 번 더 발행합니다. 두 경우 모두 snapshot·occupancy·outbox를 변경하지 않습니다. 이 durable state가 처리 완료 기준이며 Redis 응답 cache와 single-flight는 이 경로와 별개입니다.
