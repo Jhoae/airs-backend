@@ -4,7 +4,10 @@
 
 ## API Docs
 
-### ✨ [AIRS Backend Swagger UI](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/airs-release/backend/main/openapi.yaml)
+### ✨ [AIRS Backend Swagger UI](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/Jhoae/airs-backend/main/openapi.yaml)
+
+현재 백엔드 소스의 기준 저장소는 [`Jhoae/airs-backend`](https://github.com/Jhoae/airs-backend)입니다.
+프로젝트 종료 후에는 운영 배포와 CI/CD를 수행하지 않고, 로컬 테스트를 통과한 코드만 개인 저장소에서 관리합니다.
 
 ## 기술스택
 
@@ -29,7 +32,7 @@
 |---|---|
 | Application | Java 21 · Spring Boot 3.5.13 · Gradle Wrapper |
 | Data & Messaging | MySQL 8.4 · InfluxDB 2.7 · Redis 7.4 · Mosquitto 2 |
-| Deployment | Docker Compose · Caddy 2.8 · GitHub Actions |
+| Local & Staging | Docker Compose · Caddy 2.8 |
 
 ## 시스템 구성도
 
